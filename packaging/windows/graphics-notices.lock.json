@@ -1,0 +1,190 @@
+{
+  "schema_version": 1,
+  "binaries": {
+    "opengl32sw.dll": {
+      "bytes": 20639888,
+      "sha256": "b04de4541863bc7d8879040a78889c4849c1b1da2784c4630f734c146c2998ce"
+    },
+    "d3dcompiler_47.dll": {
+      "bytes": 4173928,
+      "sha256": "e994847e01a6f1e4cbdc5a864616ac262f67ee4f14db194984661a8d927ab7f4"
+    }
+  },
+  "components": {
+    "Mesa": {
+      "version": "11.2.2",
+      "backend": "GDI/WGL llvmpipe software renderer",
+      "source": "https://archive.mesa3d.org/older-versions/11.x/11.2.2/mesa-11.2.2.tar.xz",
+      "qt_build_recipe": "https://wiki.qt.io/MesaLlvmpipe",
+      "notice_scope": "Central license and reviewed Windows/Khronos/C11/GDI notice-bearing source files, preserved without alteration."
+    },
+    "LLVM": {
+      "version": "3.6.2",
+      "source_tag": "llvmorg-3.6.2",
+      "source": "https://github.com/llvm/llvm-project/tree/llvmorg-3.6.2/llvm",
+      "notice_scope": "Original UIUC/NCSA license and referenced regex/MD5 Support notices."
+    },
+    "WindowsSDK": {
+      "version": "Windows SDK for Windows 8.1",
+      "product_version": "8.100.26936",
+      "eula_version": "6.3.0.0",
+      "d3dcompiler_file_version": "6.3.9600.16384 (winblue_rtm.130821-1623)",
+      "app_local_redistribution_documentation": "https://learn.microsoft.com/en-us/windows/win32/directx-sdk--august-2009-",
+      "notice_scope": "Original license.rtf extracted from the verified Microsoft SDK8.1 bootstrapper; retain its license and redistribution conditions."
+    }
+  },
+  "sources": [
+    {
+      "id": "mesa-11.2.2-original-notices",
+      "component": "Mesa",
+      "format": "tar",
+      "url": "https://archive.mesa3d.org/older-versions/11.x/11.2.2/mesa-11.2.2.tar.xz",
+      "bytes": 7860932,
+      "sha256": "40e148812388ec7c6d7b6657d5a16e2e8dabba8b97ddfceea5197947647bdfb4",
+      "documents": [
+        {
+          "path": "Mesa/11.2.2/docs/license.html",
+          "member": "mesa-11.2.2/docs/license.html",
+          "bytes": 3763,
+          "sha256": "288ddfae338be168ef2492c21de42ee2f5c8ebc5a734b4e58b37007141bc2d6d"
+        },
+        {
+          "path": "Mesa/11.2.2/include/c11/threads.h",
+          "member": "mesa-11.2.2/include/c11/threads.h",
+          "bytes": 2539,
+          "sha256": "2b3477e2a1d54869cc841c5a9195209b50609a81a7d18ffc07b343f8f7313aaf"
+        },
+        {
+          "path": "Mesa/11.2.2/include/c11/threads_win32.h",
+          "member": "mesa-11.2.2/include/c11/threads_win32.h",
+          "bytes": 16403,
+          "sha256": "2d6c7d991c8f5c7a78da51cdff748bd1483a6d0558c75765253eafeff43e18d1"
+        },
+        {
+          "path": "Mesa/11.2.2/include/c99_compat.h",
+          "member": "mesa-11.2.2/include/c99_compat.h",
+          "bytes": 3861,
+          "sha256": "b7dd31e27817397ebec197324979c23e132b47bf3d5ff1b633b066f5945da53a"
+        },
+        {
+          "path": "Mesa/11.2.2/include/GL/gl.h",
+          "member": "mesa-11.2.2/include/GL/gl.h",
+          "bytes": 80615,
+          "sha256": "8a2e853417b46d205c068e092efdbcad8e1325cee7c7815667efdebb5e1c6be3"
+        },
+        {
+          "path": "Mesa/11.2.2/include/GL/glext.h",
+          "member": "mesa-11.2.2/include/GL/glext.h",
+          "bytes": 797884,
+          "sha256": "559c95f323962b9f3abfdc7be26cb661b6c136a7f27318ad2881a7680b051b27"
+        },
+        {
+          "path": "Mesa/11.2.2/include/GL/wglext.h",
+          "member": "mesa-11.2.2/include/GL/wglext.h",
+          "bytes": 43255,
+          "sha256": "8647329e5dcaf83bf6388d5d73f83b7a15cf33ac92a1768122f2cad592be4b3a"
+        },
+        {
+          "path": "Mesa/11.2.2/src/gallium/targets/libgl-gdi/libgl_gdi.c",
+          "member": "mesa-11.2.2/src/gallium/targets/libgl-gdi/libgl_gdi.c",
+          "bytes": 5018,
+          "sha256": "9f2e40aa40e8eea0124e60eb9e28bde0887c1812b5909ccf443e3517c53ff82f"
+        },
+        {
+          "path": "Mesa/11.2.2/src/gallium/winsys/sw/gdi/gdi_sw_winsys.c",
+          "member": "mesa-11.2.2/src/gallium/winsys/sw/gdi/gdi_sw_winsys.c",
+          "bytes": 6826,
+          "sha256": "1c96c6e56c5cd13ed840b626e23f7541ace8022de34685d2697c843129c40e36"
+        }
+      ]
+    },
+    {
+      "id": "llvm-3.6.2-LICENSE.TXT",
+      "component": "LLVM",
+      "format": "file",
+      "url": "https://raw.githubusercontent.com/llvm/llvm-project/llvmorg-3.6.2/llvm/LICENSE.TXT",
+      "bytes": 3281,
+      "sha256": "e3bc36440fc927c62d5cc24efeefe225a14d4e34ffeb0c92e430625cce9ee444",
+      "documents": [
+        {
+          "path": "LLVM/3.6.2/LICENSE.TXT",
+          "bytes": 3281,
+          "sha256": "e3bc36440fc927c62d5cc24efeefe225a14d4e34ffeb0c92e430625cce9ee444"
+        }
+      ]
+    },
+    {
+      "id": "llvm-3.6.2-lib-Support-COPYRIGHT.regex",
+      "component": "LLVM",
+      "format": "file",
+      "url": "https://raw.githubusercontent.com/llvm/llvm-project/llvmorg-3.6.2/llvm/lib/Support/COPYRIGHT.regex",
+      "bytes": 2718,
+      "sha256": "0424e57d4303164dc59a8509c20dae0518b853692e5c2b0e98b11816fdbc97c7",
+      "documents": [
+        {
+          "path": "LLVM/3.6.2/lib/Support/COPYRIGHT.regex",
+          "bytes": 2718,
+          "sha256": "0424e57d4303164dc59a8509c20dae0518b853692e5c2b0e98b11816fdbc97c7"
+        }
+      ]
+    },
+    {
+      "id": "llvm-3.6.2-lib-Support-MD5.cpp",
+      "component": "LLVM",
+      "format": "file",
+      "url": "https://raw.githubusercontent.com/llvm/llvm-project/llvmorg-3.6.2/llvm/lib/Support/MD5.cpp",
+      "bytes": 9148,
+      "sha256": "19edb938505f839ba5d2d96c26d5db454542cc9d22d277652f5085c62d0ac792",
+      "documents": [
+        {
+          "path": "LLVM/3.6.2/lib/Support/MD5.cpp",
+          "bytes": 9148,
+          "sha256": "19edb938505f839ba5d2d96c26d5db454542cc9d22d277652f5085c62d0ac792"
+        }
+      ]
+    },
+    {
+      "id": "llvm-3.6.2-include-llvm-Support-MD5.h",
+      "component": "LLVM",
+      "format": "file",
+      "url": "https://raw.githubusercontent.com/llvm/llvm-project/llvmorg-3.6.2/llvm/include/llvm/Support/MD5.h",
+      "bytes": 1975,
+      "sha256": "f7db858aba5c9ee861b8a8e8b80f4c943f712ca4c15fad4bc2bd002a589bb1d4",
+      "documents": [
+        {
+          "path": "LLVM/3.6.2/include/llvm/Support/MD5.h",
+          "bytes": 1975,
+          "sha256": "f7db858aba5c9ee861b8a8e8b80f4c943f712ca4c15fad4bc2bd002a589bb1d4"
+        }
+      ]
+    },
+    {
+      "id": "windows-sdk-8.1-original-eula",
+      "component": "WindowsSDK",
+      "format": "vendored",
+      "url": "https://download.microsoft.com/download/B/0/C/B0C80BA3-8AD6-4958-810B-6882485230B5/standalonesdk/sdksetup.exe",
+      "bytes": 64354,
+      "sha256": "7606715231cab510135bb271836677797189c64cfacc59b8b444e427fecace78",
+      "vendored_path": "notices/windows-sdk-8.1/license.rtf",
+      "source_archive": {
+        "bytes": 998056,
+        "sha256": "5107822a5a99bcdef4c7b7c7eea218425692f0185750b0d4fafd441034a7486b",
+        "member": "AttachedContainer/u1",
+        "manifest_member": "AttachedContainer/0",
+        "manifest_sha256": "95a8c735c0720d14954226c81512c69af0cc0086d61b05b81a70fd9c91f4d054",
+        "payload_id": "pay3F5EAEDFC5E5DF53E9F54024C635CF4C",
+        "declared_filename": "license.rtf",
+        "declared_sha1": "678d21cc542b9cca66208bccabb02b05cd1b6ce7",
+        "user_experience_manifest_member": "AttachedContainer/u12",
+        "user_experience_manifest_sha256": "540782628f641bec1fbcc11f9df15187e4df505d8e59d4853fea85f89749601e"
+      },
+      "documents": [
+        {
+          "path": "WindowsSDK/8.1/license.rtf",
+          "bytes": 64354,
+          "sha256": "7606715231cab510135bb271836677797189c64cfacc59b8b444e427fecace78"
+        }
+      ]
+    }
+  ]
+}

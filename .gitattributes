@@ -1,0 +1,5 @@
+# Vendored upstream files are verified byte-for-byte against manifest SHA256.
+# In particular, converting the OCR license to CRLF breaks Windows packaging.
+/vendor/tessdata-fast-4.1.0/* -text
+# Preserve the hash-verified original Microsoft SDK license on every clone.
+packaging/windows/notices/windows-sdk-8.1/license.rtf -text

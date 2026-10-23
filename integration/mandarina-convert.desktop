@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Service
+Name=Maracujá
+X-KDE-ServiceTypes=KonqPopupMenu/Plugin
+MimeType=application/pdf;image/*;text/plain;text/markdown;text/x-markdown;text/html;application/vnd.openxmlformats-officedocument.wordprocessingml.document;application/vnd.oasis.opendocument.text;application/rtf;text/rtf;audio/mpeg;audio/mp4;audio/x-m4a;audio/x-wav;audio/wav;audio/flac;audio/x-flac;audio/ogg;audio/opus;audio/x-aiff;audio/x-ms-wma;
+X-KDE-Protocols=file
+Actions=Convert;
+
+[Desktop Action Convert]
+Name=Converter com Maracujá…
+Icon=org.winux.Maracuja
+Exec=@MARACUJA_COMMAND@ --wheel %U
+

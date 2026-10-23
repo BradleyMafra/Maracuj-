@@ -1,0 +1,68 @@
+{
+  "qt_version": "6.8.3",
+  "qt_arch": "win64_mingw",
+  "compiler_tool": "tools_mingw1310",
+  "compiler_package": "qt.tools.win64_mingw1310",
+  "archives": [
+    {
+      "package": "qt.qt6.683.addons.qtimageformats.win64_mingw",
+      "version": "6.8.3-0-202503201308",
+      "url": "https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_683/qt6_683/qt.qt6.683.addons.qtimageformats.win64_mingw/6.8.3-0-202503201308qtimageformats-Windows-Windows_10_22H2-Mingw-Windows-Windows_10_22H2-X86_64.7z",
+      "sha256": "8ca361259b8c9a72ad9117e064ac6fbef58342002b4eed1ea27678dbe560f0c8"
+    },
+    {
+      "package": "qt.qt6.683.win64_mingw",
+      "version": "6.8.3-0-202503201308",
+      "url": "https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_683/qt6_683/qt.qt6.683.win64_mingw/6.8.3-0-202503201308qtbase-Windows-Windows_10_22H2-Mingw-Windows-Windows_10_22H2-X86_64.7z",
+      "sha256": "a2cd09053e907b161d84696ec5f1c316cfc089482c5b04de9141b949fa19acd1"
+    },
+    {
+      "package": "qt.qt6.683.win64_mingw",
+      "version": "6.8.3-0-202503201308",
+      "url": "https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_683/qt6_683/qt.qt6.683.win64_mingw/6.8.3-0-202503201308qtsvg-Windows-Windows_10_22H2-Mingw-Windows-Windows_10_22H2-X86_64.7z",
+      "sha256": "0dd973a4e6441f93c943103676555f8e8f96114949d22e3b3d2f3571bf5b0115"
+    },
+    {
+      "package": "qt.qt6.683.win64_mingw",
+      "version": "6.8.3-0-202503201308",
+      "url": "https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_683/qt6_683/qt.qt6.683.win64_mingw/6.8.3-0-202503201308qtdeclarative-Windows-Windows_10_22H2-Mingw-Windows-Windows_10_22H2-X86_64.7z",
+      "sha256": "d69f20dde15fade6a6a535cd181d64da33347e5e853ebf3d6ff7dd4a149dc029"
+    },
+    {
+      "package": "qt.qt6.683.win64_mingw",
+      "version": "6.8.3-0-202503201308",
+      "url": "https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_683/qt6_683/qt.qt6.683.win64_mingw/6.8.3-0-202503201308qttools-Windows-Windows_10_22H2-Mingw-Windows-Windows_10_22H2-X86_64.7z",
+      "sha256": "fe14b579d8ae4ed91cbcc4fd8f9476cf12d2690fdab07b56f2924743066026c2"
+    },
+    {
+      "package": "qt.qt6.683.win64_mingw",
+      "version": "6.8.3-0-202503201308",
+      "url": "https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_683/qt6_683/qt.qt6.683.win64_mingw/6.8.3-0-202503201308qttranslations-Windows-Windows_10_22H2-Mingw-Windows-Windows_10_22H2-X86_64.7z",
+      "sha256": "9ed0e5c77d00a33aacf1dffbfca4e31f2dd1a06a56e909810ece57f39d9411fa"
+    },
+    {
+      "package": "qt.qt6.683.win64_mingw",
+      "version": "6.8.3-0-202503201308",
+      "url": "https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_683/qt6_683/qt.qt6.683.win64_mingw/6.8.3-0-202503201308MinGW-w64-x86_64-13.1.0-release-posix-seh-msvcrt-rt_v11-rev1-runtime.7z",
+      "sha256": "85e196195993a052d1137f22d6d7ba2f5e595c5103b96968a073c97ca1762dc6"
+    },
+    {
+      "package": "qt.qt6.683.win64_mingw",
+      "version": "6.8.3-0-202503201308",
+      "url": "https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_683/qt6_683/qt.qt6.683.win64_mingw/6.8.3-0-202503201308d3dcompiler_47-x64.7z",
+      "sha256": "f94adbdd0ab9b971234c23b2facb37acdb7f0c3776e0ae192f9f08125d1d170c"
+    },
+    {
+      "package": "qt.qt6.683.win64_mingw",
+      "version": "6.8.3-0-202503201308",
+      "url": "https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_683/qt6_683/qt.qt6.683.win64_mingw/6.8.3-0-202503201308opengl32sw-64-mesa_11_2_2-signed_sha256.7z",
+      "sha256": "d57fd562da4d8ed5d90589700b7e85bc0e5f3b8853a6d761f94538ec50a3eee7"
+    },
+    {
+      "package": "qt.tools.win64_mingw1310",
+      "version": "13.1.0-202407240918",
+      "url": "https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/tools_mingw1310/qt.tools.win64_mingw1310/13.1.0-202407240918mingw1310.7z",
+      "sha256": "a7b502294a903b64fccd4a41ba39f48d3f6c9a5ece167f0cfaeac920d15b344f"
+    }
+  ]
+}

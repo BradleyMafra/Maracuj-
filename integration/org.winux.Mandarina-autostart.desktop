@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Maracujá
+Comment=Mantenha a roda do Maracujá com Shift disponível em segundo plano
+Exec=@MARACUJA_COMMAND@ --background
+TryExec=@MARACUJA_COMMAND@
+Icon=org.winux.Maracuja
+Terminal=false
+StartupNotify=false
+OnlyShowIn=KDE;

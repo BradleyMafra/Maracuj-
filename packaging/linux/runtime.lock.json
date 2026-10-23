@@ -1,0 +1,35 @@
+{
+  "python_version": "3.12.15",
+  "python_windows": {
+    "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261021/cpython-3.12.15%2B20261021-x86_64-pc-windows-msvc-install_only_stripped.tar.gz",
+    "sha256": "aac5d331fc3307343f95928fdbea4583f0d53973d08c7e1d081884fbd229a0e1"
+  },
+  "python_linux": {
+    "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261021/cpython-3.12.15%2B20261021-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz",
+    "sha256": "6d7521138fd33afddc1ccd08abb007d9a2829e38117c2576f9efdc0ec73ce772"
+  },
+  "libreoffice_version": "26.8.1",
+  "libreoffice_windows": {
+    "url": "https://download.documentfoundation.org/libreoffice/stable/26.8.1/win/x86_64/LibreOffice_26.8.1_Win_x86-64.msi",
+    "sha256": "c6298b10cfa1748bcbedad94c62ce771e240e5021bfd6d7a967cd571b04b5312"
+  },
+  "libreoffice_linux": {
+    "url": "https://download.documentfoundation.org/libreoffice/stable/26.8.1/deb/x86_64/LibreOffice_26.8.1_Linux_x86-64_deb.tar.gz",
+    "sha256": "30903df3b9f61360d9660cd707de48cd2831469114492a5008ed58a0ac77d044"
+  },
+  "appimagetool": {
+    "url": "https://api.github.com/repos/AppImage/appimagetool/releases/assets/610035789",
+    "sha256": "95cbe7cce9717fce90c484e34052ee7c7f1d7635b33c12525b4776826a7d29b6",
+    "asset_id": 610035789
+  },
+  "qt_windows": {
+    "version": "6.8.3",
+    "architecture": "win64_msvc2022_64",
+    "aqt_version": "3.3.0"
+  },
+  "innosetup": {
+    "url": "https://github.com/jrsoftware/issrc/releases/download/is-7_1_0/innosetup-7.1.0-x64.exe",
+    "sha256": "0362a383ed217d4c4239b5933866dd96d3eb2102737da92f80f6057a4b40df2f"
+  },
+  "ubuntu_snapshot": "20261022T000000Z"
+}

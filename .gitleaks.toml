@@ -1,0 +1,14 @@
+title = "Maracuja source secret scanning"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "generic-api-key"
+
+  [[rules.allowlists]]
+  description = "The owner-approved public Pix donation address is not an authentication credential"
+  condition = "AND"
+  paths = ['''(^|/)assets/support-pix\.json$''']
+  regexTarget = "secret"
+  regexes = ['''^fc35662c-a90f-4f00-bdc7-a490618c6966$''']

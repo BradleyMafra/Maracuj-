@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kcfg xmlns="http://www.kde.org/standards/kcfg/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.kde.org/standards/kcfg/1.0 http://www.kde.org/standards/kcfg/1.0/kcfg.xsd">
+  <kcfgfile name=""/>
+  <!-- ScriptedEffect supplies its own Effect-mandarina-shift KConfig group. -->
+  <group name="">
+    <entry name="TriggerMode" type="String">
+      <default>drag</default>
+    </entry>
+    <entry name="TriggerModifiers" type="Int">
+      <default>33554432</default>
+    </entry>
+    <entry name="TriggerShortcut" type="String">
+      <default></default>
+    </entry>
+    <entry name="ShortcutAction" type="String">
+      <default></default>
+    </entry>
+    <entry name="ToolsEnabled" type="Bool">
+      <default>true</default>
+    </entry>
+    <entry name="ToolsModifiers" type="Int">
+      <default>134217728</default>
+    </entry>
+    <entry name="ToolsShortcut" type="String">
+      <default></default>
+    </entry>
+    <entry name="ToolsShortcutAction" type="String">
+      <default></default>
+    </entry>
+  </group>
+</kcfg>

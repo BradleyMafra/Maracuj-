@@ -1,0 +1,16 @@
+{
+    "KPackageStructure": "KWin/Effect",
+    "KPlugin": {
+        "Id": "mandarina-shift",
+        "Name": "Maracujá · Atalho da roda",
+        "Description": "Mostra a roda do Maracujá pelo atalho configurado, com ou sem arraste.",
+        "Category": "Tools",
+        "Icon": "org.winux.Maracuja",
+        "License": "MIT",
+        "Version": "0.1.0",
+        "EnabledByDefault": false,
+        "Authors": [{ "Name": "Winux" }]
+    },
+    "X-Plasma-API": "javascript",
+    "X-KDE-Ordering": 60
+}

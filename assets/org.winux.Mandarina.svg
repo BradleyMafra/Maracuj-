@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-labelledby="title description">
+  <title id="title">Maracujá</title>
+  <desc id="description">Maracujá roxo com uma folha verde e uma metade aberta, de polpa dourada e sementes escuras.</desc>
+  <defs>
+    <linearGradient id="skin" x1="18" y1="34" x2="80" y2="108" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ad70cf"/>
+      <stop offset=".45" stop-color="#8048a7"/>
+      <stop offset="1" stop-color="#4d276e"/>
+    </linearGradient>
+    <radialGradient id="pulp" cx=".35" cy=".25" r=".9">
+      <stop stop-color="#fff1a0"/>
+      <stop offset=".68" stop-color="#f3c64d"/>
+      <stop offset="1" stop-color="#dfa02c"/>
+    </radialGradient>
+    <linearGradient id="leaf" x1="51" y1="31" x2="86" y2="10" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#42855c"/>
+      <stop offset="1" stop-color="#89c477"/>
+    </linearGradient>
+  </defs>
+  <ellipse cx="66" cy="115" rx="50" ry="7" fill="#4d276e" opacity=".12"/>
+  <path d="M49 31c-4-13-13-18-24-18 3 13 11 20 24 18Z" fill="#609b68"/>
+  <path d="M49 31c4-18 18-25 38-21-6 18-18 26-38 21Z" fill="url(#leaf)"/>
+  <path d="m49 31 22-13" fill="none" stroke="#d0e6a9" stroke-width="2" stroke-linecap="round" opacity=".75"/>
+  <path d="M48 37c4-8 3-15-1-22" fill="none" stroke="#506b45" stroke-width="5" stroke-linecap="round"/>
+  <path d="M50 30c25-2 43 17 43 43 0 25-17 42-41 42-25 0-41-18-41-41 0-22 15-42 39-44Z" fill="url(#skin)"/>
+  <path d="M26 64c2-12 9-20 21-23" fill="none" stroke="#e4beed" stroke-width="6" stroke-linecap="round" opacity=".64"/>
+  <path d="M20 81c2 14 12 24 24 27" fill="none" stroke="#ba80ce" stroke-width="2" stroke-linecap="round" opacity=".4"/>
+  <circle cx="81" cy="82" r="38" fill="#542d72"/>
+  <circle cx="81" cy="82" r="34" fill="#fffcf2"/>
+  <circle cx="81" cy="82" r="28.5" fill="url(#pulp)"/>
+  <path d="M59 69c7-12 23-17 36-9" fill="none" stroke="#fff9d5" stroke-width="3" stroke-linecap="round" opacity=".8"/>
+  <g fill="#ffe792" stroke="#e6b43d" stroke-width="1.2">
+    <ellipse cx="72" cy="63" rx="7" ry="5" transform="rotate(-30 72 63)"/>
+    <ellipse cx="87" cy="64" rx="7" ry="5" transform="rotate(25 87 64)"/>
+    <ellipse cx="98" cy="75" rx="7" ry="5" transform="rotate(60 98 75)"/>
+    <ellipse cx="99" cy="90" rx="7" ry="5" transform="rotate(-55 99 90)"/>
+    <ellipse cx="88" cy="101" rx="7" ry="5" transform="rotate(-25 88 101)"/>
+    <ellipse cx="73" cy="101" rx="7" ry="5" transform="rotate(25 73 101)"/>
+    <ellipse cx="62" cy="89" rx="7" ry="5" transform="rotate(60 62 89)"/>
+    <ellipse cx="63" cy="74" rx="7" ry="5" transform="rotate(-55 63 74)"/>
+    <ellipse cx="78" cy="78" rx="7" ry="5" transform="rotate(35 78 78)"/>
+    <ellipse cx="84" cy="89" rx="7" ry="5" transform="rotate(-30 84 89)"/>
+  </g>
+  <g fill="#402d3c">
+    <ellipse cx="72" cy="63" rx="3.2" ry="2.1" transform="rotate(-30 72 63)"/>
+    <ellipse cx="87" cy="64" rx="3.2" ry="2.1" transform="rotate(25 87 64)"/>
+    <ellipse cx="98" cy="75" rx="3.2" ry="2.1" transform="rotate(60 98 75)"/>
+    <ellipse cx="99" cy="90" rx="3.2" ry="2.1" transform="rotate(-55 99 90)"/>
+    <ellipse cx="88" cy="101" rx="3.2" ry="2.1" transform="rotate(-25 88 101)"/>
+    <ellipse cx="73" cy="101" rx="3.2" ry="2.1" transform="rotate(25 73 101)"/>
+    <ellipse cx="62" cy="89" rx="3.2" ry="2.1" transform="rotate(60 62 89)"/>
+    <ellipse cx="63" cy="74" rx="3.2" ry="2.1" transform="rotate(-55 63 74)"/>
+    <ellipse cx="78" cy="78" rx="3.2" ry="2.1" transform="rotate(35 78 78)"/>
+    <ellipse cx="84" cy="89" rx="3.2" ry="2.1" transform="rotate(-30 84 89)"/>
+  </g>
+  <g fill="#fff5ca" opacity=".85">
+    <circle cx="71" cy="62" r=".85"/><circle cx="86" cy="63" r=".85"/>
+    <circle cx="77" cy="77" r=".85"/><circle cx="83" cy="88" r=".85"/>
+  </g>
+</svg>
+

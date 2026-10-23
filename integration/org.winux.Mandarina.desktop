@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Maracujá
+GenericName=Conversor de arquivos
+Comment=Converta imagens, documentos, PDFs e áudios com a roda do Maracujá
+Exec=@MARACUJA_COMMAND@ %U
+TryExec=@MARACUJA_COMMAND@
+Icon=org.winux.Maracuja
+Terminal=false
+StartupNotify=true
+Categories=Qt;Utility;FileTools;
+MimeType=image/jpeg;image/png;image/webp;image/bmp;image/tiff;image/avif;image/heif;application/pdf;text/plain;text/markdown;text/x-markdown;text/html;application/vnd.openxmlformats-officedocument.wordprocessingml.document;application/vnd.oasis.opendocument.text;application/rtf;text/rtf;audio/mpeg;audio/mp4;audio/x-m4a;audio/x-wav;audio/wav;audio/flac;audio/x-flac;audio/ogg;audio/opus;audio/x-aiff;audio/x-ms-wma;
+Keywords=Maracujá;maracuja;converter;conversão;imagem;foto;PDF;documento;texto;TXT;DOCX;EPUB;áudio;MP3;
+

@@ -1,0 +1,15 @@
+#!/bin/sh
+set -eu
+HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+if [ "${1-}" = "--install-integration" ]; then
+    shift
+    exec sh "$HERE/install-user.sh" --integration-only "$@"
+fi
+export PATH="$HERE/tools:$PATH"
+export LD_LIBRARY_PATH="$HERE/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export QT_PLUGIN_PATH="$HERE/plugins"
+export QML2_IMPORT_PATH="$HERE/qml"
+export QML_IMPORT_PATH="$HERE/qml"
+export XDG_DATA_DIRS="$HERE/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+export FONTCONFIG_FILE="$HERE/fonts/fonts.conf"
+exec "$HERE/maracuja" "$@"
