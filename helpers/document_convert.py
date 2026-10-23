@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import base64
 from contextlib import contextmanager
+import gc
 import html
 import importlib.util
 import io
@@ -27,6 +28,8 @@ MAX_SOURCE = 64 * 1024 * 1024
 MAX_OUTPUT = 256 * 1024 * 1024
 MAX_TEXT = 16 * 1024 * 1024
 MAX_PAGES = 200
+MAX_REQUEST_BYTES = 64 * 1024
+MAX_SESSION_JOBS = 32
 DOCUMENT_EXTENSIONS = {"txt", "md", "markdown", "html", "htm", "docx", "odt", "rtf"}
 DOCUMENT_FORMATS = ["pdf", "docx", "odt", "rtf", "txt", "md", "html", "epub"]
 FILTERS = {
@@ -49,6 +52,7 @@ _OCR_MODULE = None
 _PLATFORM_MODULE = None
 _RUNTIME = None
 _RUNTIME_ROOT = ""
+_PROFILE_MODULE = None
 
 
 def platform_module():
@@ -500,6 +504,10 @@ def convert_document(source: Path, target: str, output: Path, soffice: str) -> N
         preflight_zip(source)
     with document_workspace(output.parent) as work:
         write_profile(work)
+        if runtime().windows:
+            # Only a packaged, verified extension registry is copied. The
+            # security policy, home, temp and document contents stay job-local.
+            prepared_windows_profile(work)
         (work / "out").mkdir()
         # Do not expose the source directory or any unrelated user file to Writer.
         shutil.copyfile(source, work / ("source." + extension))
@@ -630,10 +638,7 @@ def pdf_text(reader, source: Path, output: Path, tessdata: str = "", progress=em
     pages = []
     length = 0
     engine = None
-    try:
-        ocr_available = ocr_module().capabilities(tessdata, _RUNTIME_ROOT)["ocr"]
-    except Exception:
-        ocr_available = False
+    ocr_available = None
     total = len(reader.pages)
     try:
         for index, page in enumerate(reader.pages, 1):
@@ -641,6 +646,11 @@ def pdf_text(reader, source: Path, output: Path, tessdata: str = "", progress=em
             text = pdf_page_text(page, source, index, output, MAX_TEXT - length)
             phase = "text"
             # Never OCR/rewrite a page that already contains selectable text.
+            if not text.strip() and ocr_available is None:
+                try:
+                    ocr_available = ocr_module().capabilities(tessdata, _RUNTIME_ROOT)["ocr"]
+                except Exception:
+                    ocr_available = False
             if not text.strip() and ocr_available:
                 phase = "ocr"
                 progress(index - 1, total, phase)
@@ -862,10 +872,134 @@ def convert_pdf(source: Path, target: str, output: Path,
         raise ConversionError("Este formato de PDF não está disponível.")
 
 
+def prepared_windows_profile(work: Path) -> None:
+    global _PROFILE_MODULE
+    path = Path(__file__).resolve().with_name("windows_office_profile.py")
+    if not path.is_file():
+        return
+    if _PROFILE_MODULE is None:
+        specification = importlib.util.spec_from_file_location("maracuja_private_office_profile", path)
+        if specification is None or specification.loader is None:
+            return
+        module = importlib.util.module_from_spec(specification)
+        specification.loader.exec_module(module)
+        _PROFILE_MODULE = module
+    _PROFILE_MODULE.copy_prepared_profile(work, runtime().root)
+
+
+def route_available(extension: str, is_pdf: bool, image_ocr: bool,
+                    target: str, tessdata: str) -> bool:
+    """Check only this route; unrelated OCR/Office discovery never gates a PDF."""
+    if image_ocr:
+        return (target in {"txt", "docx"} and has_module("PIL")
+                and (target != "docx" or has_module("docx"))
+                and ocr_module().capabilities(tessdata, _RUNTIME_ROOT)["ocr"])
+    if is_pdf:
+        if not has_module("pypdf"):
+            return False
+        if target in {"txt", "md", "html", "epub"}:
+            return True
+        if target == "docx":
+            return has_module("docx")
+        if target == "pptx":
+            return has_module("pptx") and has_module("PIL") and runtime().tool("pdftoppm") is not None
+        if target == "xlsx":
+            return has_module("pdfplumber") and has_module("openpyxl")
+        return False
+    # convert_document checks Office/isolation and the requested Markdown filter.
+    return extension in DOCUMENT_EXTENSIONS and target in DOCUMENT_FORMATS
+
+
+def execute_request(request: dict, soffice: str, tessdata: str, progress=emit_progress) -> dict:
+    output = None
+    cleanup_output = False
+    try:
+        if not all(isinstance(request.get(key), str) and request[key] for key in ("input", "output", "format")):
+            raise ConversionError("Parâmetros de conversão inválidos.")
+        if type(request.get("image_ocr", False)) is not bool:
+            raise ConversionError("Parâmetros de conversão inválidos.")
+        source, output = Path(request["input"]).resolve(), Path(request["output"]).absolute()
+        target = request["format"].lower()
+        image_ocr = request.get("image_ocr", False)
+        extension = source.suffix.lower().lstrip(".")
+        if not source.is_file() or not 0 <= source.stat().st_size <= MAX_SOURCE:
+            raise ConversionError("Documento inválido ou maior que 64 MiB.")
+        if output.exists() or output.is_symlink() or source == output.resolve() or not output.parent.is_dir():
+            raise ConversionError("O destino temporário do documento é inválido.")
+        cleanup_output = True
+        is_pdf = extension == "pdf"
+        if extension not in DOCUMENT_EXTENSIONS and not is_pdf:
+            with source.open("rb") as stream:
+                is_pdf = stream.read(5) == b"%PDF-"
+        if not route_available(extension, is_pdf, image_ocr, target, tessdata):
+            raise ConversionError("Esta combinação de documentos não está disponível.")
+        if image_ocr:
+            convert_image_ocr(source, target, output, tessdata, progress)
+        elif is_pdf:
+            convert_pdf(source, target, output, tessdata, progress)
+        elif extension in DOCUMENT_EXTENSIONS:
+            convert_document(source, target, output, soffice)
+        else:
+            raise ConversionError("Esta combinação de documentos não está disponível.")
+        if not output.is_file() or not 0 < output.stat().st_size <= MAX_OUTPUT:
+            raise ConversionError("A conversão não produziu um documento válido dentro do limite de tamanho.")
+        return {"ok": True}
+    except BaseException as error:
+        if output is not None and cleanup_output:
+            try:
+                output.unlink(missing_ok=True)
+            except OSError:
+                pass
+        message = str(error) if isinstance(error, ConversionError) else "Não foi possível ler ou converter este documento."
+        return {"ok": False, "error": message}
+
+
+def serve(soffice: str, tessdata: str, input_stream=None, output_stream=None) -> int:
+    """One batch only: bounded requests, no document state shared between jobs."""
+    input_stream = sys.stdin.buffer if input_stream is None else input_stream
+    output_stream = sys.stdout if output_stream is None else output_stream
+    previous_id = 0
+
+    def emit(event):
+        output_stream.write(json.dumps(event, ensure_ascii=True) + "\n")
+        output_stream.flush()
+
+    for _ in range(MAX_SESSION_JOBS):
+        line = input_stream.readline(MAX_REQUEST_BYTES + 1)
+        if not line:
+            return 0
+        request = None
+        try:
+            if len(line) > MAX_REQUEST_BYTES or not line.endswith(b"\n"):
+                raise ValueError()
+            request = json.loads(line)
+            if (not isinstance(request, dict)
+                    or set(request) != {"id", "input", "output", "format", "image_ocr"}
+                    or type(request["id"]) is not int or not previous_id < request["id"] <= 1_000_000_000):
+                raise ValueError()
+        except (ValueError, UnicodeError):
+            emit({"type": "result", "id": None, "ok": False, "error": "Parâmetros de conversão inválidos."})
+            return 2
+        request_id = request["id"]
+        previous_id = request_id
+        progress = lambda done, total, phase: emit({"type": "progress", "id": request_id,
+                                                   "done": done, "total": total, "phase": phase})
+        result = execute_request(request, soffice, tessdata, progress)
+        # Drop request/document references before accepting another job. Imported
+        # libraries/configuration can remain warm; OCR engines have context managers.
+        request = None
+        gc.collect()
+        emit({"type": "result", "id": request_id, **result})
+        if not result["ok"]:
+            return 0  # C++ closes the owned process tree after every failed job.
+    return 0
+
+
 def main() -> int:
     global _RUNTIME_ROOT, _RUNTIME
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--capabilities", action="store_true")
+    parser.add_argument("--serve", action="store_true")
     parser.add_argument("--input")
     parser.add_argument("--output")
     parser.add_argument("--format")
@@ -879,47 +1013,13 @@ def main() -> int:
     if arguments.capabilities:
         print(json.dumps(capabilities(arguments.soffice, arguments.tessdata)), flush=True)
         return 0
-    output = None
-    cleanup_output = False
-    try:
-        if not all([arguments.input, arguments.output, arguments.format]):
-            raise ConversionError("Parâmetros de conversão inválidos.")
-        source, output = Path(arguments.input).resolve(), Path(arguments.output).absolute()
-        target = arguments.format.lower()
-        extension = source.suffix.lower().lstrip(".")
-        if not source.is_file() or not 0 <= source.stat().st_size <= MAX_SOURCE:
-            raise ConversionError("Documento inválido ou maior que 64 MiB.")
-        if output.exists() or output.is_symlink() or source == output.resolve() or not output.parent.is_dir():
-            raise ConversionError("O destino temporário do documento é inválido.")
-        cleanup_output = True
-        supported = capabilities(arguments.soffice, arguments.tessdata)
-        is_pdf = extension == "pdf"
-        if extension not in DOCUMENT_EXTENSIONS and not is_pdf:
-            with source.open("rb") as stream:
-                is_pdf = stream.read(5) == b"%PDF-"
-        if arguments.image_ocr and target in supported["image_ocr"]:
-            convert_image_ocr(source, target, output, arguments.tessdata)
-        elif arguments.image_ocr:
-            raise ConversionError("Este formato de reconhecimento de texto não está disponível.")
-        elif is_pdf and target in supported["pdf"]:
-            convert_pdf(source, target, output, arguments.tessdata)
-        elif extension in DOCUMENT_EXTENSIONS and target in supported["documents"]:
-            convert_document(source, target, output, arguments.soffice)
-        else:
-            raise ConversionError("Esta combinação de documentos não está disponível.")
-        if not output.is_file() or not 0 < output.stat().st_size <= MAX_OUTPUT:
-            raise ConversionError("A conversão não produziu um documento válido dentro do limite de tamanho.")
-        print(json.dumps({"ok": True}), flush=True)
-        return 0
-    except BaseException as error:
-        if output is not None and cleanup_output:
-            try:
-                output.unlink(missing_ok=True)
-            except OSError:
-                pass
-        message = str(error) if isinstance(error, ConversionError) else "Não foi possível ler ou converter este documento."
-        print(json.dumps({"ok": False, "error": message}, ensure_ascii=True), flush=True)
-        return 1
+    if arguments.serve:
+        return serve(arguments.soffice, arguments.tessdata)
+    result = execute_request({"input": arguments.input, "output": arguments.output,
+                              "format": arguments.format, "image_ocr": arguments.image_ocr},
+                             arguments.soffice, arguments.tessdata)
+    print(json.dumps(result, ensure_ascii=True), flush=True)
+    return 0 if result["ok"] else 1
 
 
 if __name__ == "__main__":

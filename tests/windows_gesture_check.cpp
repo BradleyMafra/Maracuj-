@@ -30,13 +30,17 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QImage>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QPoint>
+#include <QProcess>
 #include <QTemporaryDir>
 #include <QThread>
 #include <QVariantMap>
 #include <QWidget>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <stdexcept>
 #include <string>
@@ -266,6 +270,110 @@ void finishConversion(Converter &converter)
     require(QFileInfo::exists(converter.outputs().first()), "The OLE conversion output is missing");
 }
 
+void writeFixture(const QString &path, const QByteArray &contents)
+{
+    QFile file(path);
+    require(file.open(QIODevice::WriteOnly | QIODevice::NewOnly) && file.write(contents) == contents.size(),
+            "Cannot create the isolated discovery fixture");
+}
+
+void waitFormats(Converter &converter)
+{
+    QElapsedTimer timer;
+    timer.start();
+    while (converter.formatsLoading() && timer.elapsed() < 30000) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        QThread::msleep(5);
+    }
+    require(!converter.formatsLoading(), "Background format discovery did not finish");
+}
+
+void checkColdPendingDrag()
+{
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "Cannot create the cold OLE fixture directory");
+    const QDir root(temporary.path());
+    const QString config = root.filePath("runtime-paths.json");
+    writeFixture(config, QJsonDocument(QJsonObject{{"python", QCoreApplication::applicationFilePath()}}).toJson());
+    writeFixture(root.filePath("document_convert.py"), "synthetic capability fixture");
+    // Windows' narrow CRT environment does not interpret UTF-8 paths. Update
+    // the wide environment so temporary directories containing accents survive
+    // both the Qt lookup and the owned child process's environment snapshot.
+    require(_wputenv_s(L"MARACUJA_RUNTIME_CONFIG", reinterpret_cast<const wchar_t *>(config.utf16())) == 0
+                && qEnvironmentVariable("MARACUJA_RUNTIME_CONFIG") == config,
+            "The private runtime configuration did not preserve its Unicode path");
+    const QString source = root.filePath("pending.txt"), removed = root.filePath("removed.txt");
+    writeFixture(source, "Cold OLE document");
+    writeFixture(removed, "Removed before discovery finishes");
+    const QString imagePath = root.filePath("image.png");
+    QImage image(32, 24, QImage::Format_RGB32);
+    image.fill(Qt::green);
+    require(image.save(imagePath, "PNG"), "Cannot create cold OLE image fixture");
+    const auto original = digest(imagePath);
+    Converter converter;
+    converter.setInitialFiles({imagePath});
+    converter.setSelectedFormat("jpg");
+    const auto files = converter.files();
+    const auto originalFormats = converter.formats();
+    require(converter.formatsLoading() && converter.formatsForUrls({QUrl::fromLocalFile(source)}).isEmpty(),
+            "The cold document fixture was not held pending");
+    std::vector<std::unique_ptr<WindowsGesture>> gestures;
+    std::vector<std::unique_ptr<TargetReference>> targets;
+    std::vector<HWND> windows;
+    for (int index = 0; index < 5; ++index) {
+        auto gesture = std::make_unique<WindowsGesture>(&converter);
+        require(gesture->initializeForTest(), "Cannot initialize a cold owned OLE target");
+        gesture->showForTest(QPoint(600, 400));
+        windows.push_back(static_cast<HWND>(gesture->nativeWindowForTest()));
+        targets.push_back(std::make_unique<TargetReference>(static_cast<IDropTarget *>(gesture->dropTargetForTest())));
+        gestures.push_back(std::move(gesture));
+    }
+    DataReference document({source}), vanished({removed}), photo({imagePath});
+    for (int index = 0; index < 4; ++index) {
+        enter(targets[index]->object, index == 3 ? vanished.object : document.object,
+              screenPoint(windows[index], 230, 90), DROPEFFECT_COPY | DROPEFFECT_MOVE, DROPEFFECT_NONE);
+    }
+    // A pending drag survives the ordinary 450 ms probe timeout, but cancelled,
+    // replaced or invalidated drags must not revive when capabilities arrive.
+    require(targets[1]->object->DragLeave() == S_OK, "Cannot leave the pending OLE target");
+    enter(targets[2]->object, photo.object, screenPoint(windows[2], 230, 90), DROPEFFECT_MOVE, DROPEFFECT_NONE);
+    require(QFile::remove(removed), "Cannot remove the generated stale drag source");
+    constexpr double pi = 3.14159265358979323846;
+    const double angle = -pi / 2 + 0.45 * 2 * pi / originalFormats.size();
+    const auto frozenSector = screenPoint(windows[4], 230 + 140 * std::cos(angle), 230 + 140 * std::sin(angle));
+    enter(targets[4]->object, photo.object, frozenSector, DROPEFFECT_COPY | DROPEFFECT_MOVE, DROPEFFECT_COPY);
+    QElapsedTimer held;
+    held.start();
+    while (held.elapsed() < 650) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        QThread::msleep(5);
+    }
+    require(IsWindowVisible(windows[0]) && converter.formatsLoading(),
+            "The cold pending target expired before discovery finished");
+    over(targets[0]->object, screenPoint(windows[0], 230, 90), DROPEFFECT_COPY | DROPEFFECT_MOVE, DROPEFFECT_NONE);
+    writeFixture(root.filePath("release-capabilities"), "ready");
+    waitFormats(converter);
+    require(converter.formats().size() > originalFormats.size(), "The fixture did not add optional OCR sectors");
+    require(converter.files() == files && converter.selectedFormat() == "jpg" && !converter.dragPreview(),
+            "Cold native discovery replaced the main panel's selection");
+    // Recovery occurs in the same OLE operation, with no second DragEnter.
+    over(targets[0]->object, screenPoint(windows[0], 230, 90), DROPEFFECT_COPY | DROPEFFECT_MOVE, DROPEFFECT_COPY);
+    drop(targets[0]->object, photo.object, screenPoint(windows[0], 230, 90),
+         DROPEFFECT_COPY | DROPEFFECT_MOVE, DROPEFFECT_NONE);
+    for (int index : {1, 2, 3}) {
+        require(!IsWindowVisible(windows[index]), "An invalid pending drag revived after discovery");
+        over(targets[index]->object, screenPoint(windows[index], 230, 90), DROPEFFECT_COPY, DROPEFFECT_NONE);
+    }
+    // A wheel that was already valid keeps its original sectors: otherwise this
+    // near-boundary pointer would switch from PNG to JPEG as OCR sectors appear.
+    over(targets[4]->object, frozenSector, DROPEFFECT_COPY | DROPEFFECT_MOVE, DROPEFFECT_COPY);
+    drop(targets[4]->object, photo.object, frozenSector, DROPEFFECT_COPY | DROPEFFECT_MOVE, DROPEFFECT_COPY);
+    finishConversion(converter);
+    require(QFileInfo(converter.outputs().first()).suffix() == "png" && digest(imagePath) == original,
+            "Completing discovery moved an active sector or changed the original");
+    std::puts("Cold OLE pending recovery, stale rejection and fixed active sectors passed.");
+}
+
 } // namespace
 
 int main(int argc, char **argv)
@@ -274,6 +382,30 @@ int main(int argc, char **argv)
     QApplication app(argc, argv);
     app.setQuitOnLastWindowClosed(false);
     try {
+        const auto arguments = app.arguments();
+        if (arguments.contains("--capabilities")) {
+            const QDir root(arguments.value(arguments.indexOf("--runtime-root") + 1));
+            QElapsedTimer timer;
+            timer.start();
+            while (!QFileInfo::exists(root.filePath("release-capabilities")) && timer.elapsed() < 4000)
+                QThread::msleep(10);
+            if (!QFileInfo::exists(root.filePath("release-capabilities"))) return 2;
+            std::puts("{\"ok\":true,\"documents\":[\"pdf\",\"docx\",\"txt\"],\"pdf\":[],\"image_ocr\":[\"txt\",\"docx\"]}");
+            return 0;
+        }
+        if (arguments.contains("--cold-pending-check")) {
+            checkColdPendingDrag();
+            return 0;
+        }
+        QProcess coldCheck;
+        coldCheck.setProcessChannelMode(QProcess::ForwardedChannels);
+        coldCheck.setCreateProcessArgumentsModifier([](QProcess::CreateProcessArguments *args) {
+            args->flags |= CREATE_NO_WINDOW;
+        });
+        coldCheck.start(app.applicationFilePath(), {"--cold-pending-check"});
+        require(coldCheck.waitForStarted() && coldCheck.waitForFinished(40000)
+                    && coldCheck.exitStatus() == QProcess::NormalExit && coldCheck.exitCode() == 0,
+                "Cold OLE pending discovery regression failed");
         QTemporaryDir temporary;
         require(temporary.isValid(), "Cannot create the private fixture directory");
         const QDir root(temporary.path());
@@ -295,6 +427,7 @@ int main(int argc, char **argv)
                     "Cannot create the independent panel selection");
         }
         converter.setInitialFiles({document});
+        waitFormats(converter);
         converter.setSelectedFormat(QStringLiteral("md"));
         require(converter.inputKind() == QStringLiteral("document")
                     && converter.selectedFormat() == QStringLiteral("md"),

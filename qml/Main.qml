@@ -1016,7 +1016,7 @@ ApplicationWindow {
                         }
                     }
                 }
-                Text { Layout.alignment: Qt.AlignHCenter; text: window.editingMode ? "Escolha uma ação para abrir as opções." : "Clique para converter. Ou arraste e solte no formato."; color: window.muted; font.pixelSize: 12 }
+                Text { Layout.alignment: Qt.AlignHCenter; text: window.editingMode ? "Escolha uma ação para abrir as opções." : !window.wheelFormats.length && converter.formatsLoading ? "Carregando os formatos disponíveis…" : "Clique para converter. Ou arraste e solte no formato."; color: window.muted; font.pixelSize: 12 }
                 Item {
                     id: wheel
                     objectName: "formatWheel"

@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Remove build-account metadata from release archives without running runtimes.
+"""Remove build-account metadata without starting application/tool processes.
 
 Bytecode headers and executable code are retained, including sourceless modules.
 Absolute traceback filenames are made relative to the packaged application and
 pip's POSIX launchers locate their packaged sibling interpreter after relocation.
 Use the same Python bytecode version as the packaged interpreter; incompatible
 bytecode stops packaging instead of being silently deleted or published.
+For distributions containing different Python versions, run each interpreter
+on its explicit subtree and exclude that subtree from the other interpreter.
 """
 
 import argparse
@@ -19,6 +21,7 @@ from pathlib import Path, PurePosixPath
 import re
 import shlex
 import shutil
+import stat
 import tempfile
 import types
 import zipfile
@@ -155,29 +158,98 @@ def sanitize_python_launcher(payload, stage, launcher_name):
     return prefix + b"".join(lines[consumed:]), True
 
 
-def sanitize_stage(stage):
+def _is_reparse(metadata):
+    return bool(getattr(metadata, "st_file_attributes", 0)
+                & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400))
+
+
+def _scope_directory(stage, relative):
+    """Resolve an explicit child directory without accepting links or escapes."""
+    value = os.fspath(relative)
+    normalized = value.replace("\\", "/")
+    parts = normalized.split("/")
+    if (not value or normalized.startswith("/") or ntpath.splitdrive(value)[0]
+            or any(part in {"", ".", ".."} for part in parts)):
+        raise RuntimeError("Bytecode scope must be a relative directory inside staging")
+    candidate = stage
+    for part in parts:
+        candidate /= part
+        metadata = candidate.lstat()
+        if stat.S_ISLNK(metadata.st_mode) or _is_reparse(metadata):
+            raise RuntimeError("Bytecode scope cannot traverse a link or reparse point")
+    resolved = candidate.resolve(strict=True)
+    if resolved == stage or not resolved.is_relative_to(stage) or not resolved.is_dir():
+        raise RuntimeError("Bytecode scope must be a child directory inside staging")
+    return resolved
+
+
+def _stage_files(scope, excluded):
+    # Prune links and excluded runtimes before opening their files. Unknown
+    # Windows reparse points (including junctions) must stop packaging.
+    def fail_scan(error):
+        raise error
+
+    for current, directories, files in os.walk(scope, followlinks=False, onerror=fail_scan):
+        directory = Path(current)
+        kept = []
+        for name in sorted(directories):
+            path = directory / name
+            metadata = path.lstat()
+            if stat.S_ISLNK(metadata.st_mode):
+                continue
+            if _is_reparse(metadata):
+                raise RuntimeError("Release staging cannot contain a directory reparse point")
+            if path not in excluded:
+                kept.append(name)
+        directories[:] = kept
+        for name in sorted(files):
+            path = directory / name
+            metadata = path.lstat()
+            if stat.S_ISLNK(metadata.st_mode):
+                continue
+            if _is_reparse(metadata):
+                raise RuntimeError("Release staging cannot contain a file reparse point")
+            if stat.S_ISREG(metadata.st_mode):
+                yield path
+
+
+def sanitize_stage(stage, *, subtree=None, exclude=(), check=False):
+    stage = Path(stage).absolute()
+    metadata = stage.lstat()
+    if stat.S_ISLNK(metadata.st_mode) or _is_reparse(metadata):
+        raise RuntimeError("Release staging cannot be a link or reparse point")
     stage = Path(stage).resolve(strict=True)
     if not stage.is_dir():
         raise RuntimeError("Release staging must be a directory")
+    scope = _scope_directory(stage, subtree) if subtree is not None else stage
+    excluded = {_scope_directory(stage, value) for value in exclude}
+    if any(path == scope or not path.is_relative_to(scope) for path in excluded):
+        raise RuntimeError("Excluded bytecode directories must be children of the selected scope")
     changed_files = 0
     changed_zip_entries = 0
     changed_launchers = 0
-    # Do not follow links outside the generated stage.
-    for path in sorted(stage.rglob("*")):
-        if not path.is_file() or path.is_symlink():
-            continue
+    checked_files = 0
+    checked_zip_entries = 0
+    checked_launchers = 0
+    for path in _stage_files(scope, excluded):
         relative = path.relative_to(stage).as_posix()
         if path.parent == stage / "runtime/python/bin":
             with path.open("rb") as source:
                 is_script = source.read(2) == b"#!"
             if is_script:
                 payload, changed = sanitize_python_launcher(path.read_bytes(), stage, relative)
+                checked_launchers += 1
                 if changed:
+                    if check:
+                        raise RuntimeError("Absolute launcher path remains in: " + relative)
                     _publish_replacement(path, lambda temporary: temporary.write_bytes(payload))
                     changed_launchers += 1
         if path.suffix == ".pyc":
             payload, changed = sanitize_bytecode(path.read_bytes(), stage, relative)
+            checked_files += 1
             if changed:
+                if check:
+                    raise RuntimeError("Absolute traceback path remains in: " + relative)
                 _publish_replacement(path, lambda temporary: temporary.write_bytes(payload))
                 changed_files += 1
         elif path.suffix.lower() == ".zip":
@@ -188,7 +260,10 @@ def sanitize_stage(stage):
                     if entry.filename.endswith(".pyc") and not entry.is_dir():
                         name = relative + "/" + entry.filename
                         payload, changed = sanitize_bytecode(archive.read(entry), stage, name)
+                        checked_zip_entries += 1
                         if changed:
+                            if check:
+                                raise RuntimeError("Absolute traceback path remains in: " + name)
                             replacements[entry.filename] = payload
             if not replacements:
                 continue
@@ -208,14 +283,25 @@ def sanitize_stage(stage):
             changed_zip_entries += len(replacements)
     return {"bytecode_files_sanitized": changed_files,
             "zip_bytecode_entries_sanitized": changed_zip_entries,
-            "python_launchers_sanitized": changed_launchers}
+            "python_launchers_sanitized": changed_launchers,
+            "bytecode_files_checked": checked_files,
+            "zip_bytecode_entries_checked": checked_zip_entries,
+            "python_launchers_checked": checked_launchers,
+            "python_magic": importlib.util.MAGIC_NUMBER.hex(),
+            "scope": scope.relative_to(stage).as_posix()}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--stage", type=Path, required=True)
+    parser.add_argument("--subtree", help="Only process this relative child directory of staging")
+    parser.add_argument("--exclude", action="append", default=[],
+                        help="Do not traverse this relative child directory (repeatable)")
+    parser.add_argument("--check", action="store_true",
+                        help="Check traceback and launcher paths without modifying any file")
     arguments = parser.parse_args()
-    print(json.dumps(sanitize_stage(arguments.stage)))
+    print(json.dumps(sanitize_stage(arguments.stage, subtree=arguments.subtree,
+                                    exclude=arguments.exclude, check=arguments.check)))
 
 
 if __name__ == "__main__":

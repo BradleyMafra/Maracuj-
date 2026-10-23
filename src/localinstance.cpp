@@ -1,5 +1,6 @@
 #include "localinstance.h"
 #include <QCryptographicHash>
+#include <QDeadlineTimer>
 #include <QDir>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -73,6 +74,25 @@ bool LocalInstance::forward(const QStringList &paths, bool compact, bool backgro
     if (!socket.waitForConnected(3000)) return false;
     const auto bytes = QJsonDocument(QJsonObject{{"paths", QJsonArray::fromStringList(paths)},
         {"compact", compact}, {"background", background && paths.isEmpty()}, {"quit", quit}}).toJson(QJsonDocument::Compact) + '\n';
-    if (socket.write(bytes) != bytes.size() || !socket.waitForBytesWritten(2000)) return false;
-    return socket.waitForReadyRead(3000) && socket.readAll().startsWith("OK\n");
+    if (socket.write(bytes) != bytes.size()) return false;
+    QDeadlineTimer writeDeadline(2000);
+    while (socket.bytesToWrite() > 0) {
+        const auto remaining = writeDeadline.remainingTime();
+        if (remaining <= 0) return false;
+        if (!socket.waitForBytesWritten(int(remaining)) && socket.bytesToWrite() > 0) return false;
+    }
+    // On Windows an acknowledgement can already be buffered when the write
+    // completes. Wait only for missing bytes, including a fragmented reply.
+    const QByteArray expected("OK\n");
+    QByteArray reply;
+    QDeadlineTimer readDeadline(3000);
+    while (reply.size() < expected.size()) {
+        reply += socket.read(expected.size() - reply.size());
+        if (!expected.startsWith(reply)) return false;
+        if (reply == expected) return true;
+        const auto remaining = readDeadline.remainingTime();
+        if (remaining <= 0) return false;
+        if (!socket.waitForReadyRead(int(remaining)) && socket.bytesAvailable() == 0) return false;
+    }
+    return false;
 }

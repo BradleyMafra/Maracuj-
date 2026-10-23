@@ -3,6 +3,7 @@ param(
     [string]$ProjectRoot = "",
     [string]$BuildDirectory = "build-windows",
     [string]$StageDirectory = "dist/windows/Maracuja",
+    [string]$ArtifactsDirectory = "dist/artifacts",
     [string]$QtRoot = $env:QT_ROOT_DIR,
     [ValidateSet("Auto", "MSVC", "MinGW")][string]$Toolchain = "Auto",
     [string]$MinGWRoot = "",
@@ -43,7 +44,7 @@ if ($ForbiddenTextJson) {
     }
 }
 $Cache = Join-Path $Project ".package-cache"
-$Artifacts = Join-Path $Project "dist/artifacts"
+$Artifacts = [IO.Path]::GetFullPath((Join-Path $Project $ArtifactsDirectory))
 function Run([string]$Program, [string[]]$Arguments) {
     $command = (Get-Command $Program -CommandType Application -ErrorAction Stop).Source
     Write-Host ("Running: " + $Program + " " + ($Arguments -join " "))
@@ -103,6 +104,9 @@ if (-not $SkipCompile) {
 }
 New-Item -ItemType Directory -Force $Stage, $Cache, $Artifacts | Out-Null
 Run $BuildPython @("-I", (Join-Path $Project "packaging/linux/fetch_runtime.py"), "--platform", "windows", "--stage", $Stage, "--cache", $Cache)
+# Initialize bundled extension registrations once with synthetic input only.
+# Every real document still uses a fresh private profile and security settings.
+Run (Join-Path $Stage "runtime/python/python.exe") @("-I", "-B", (Join-Path $PSScriptRoot "prepare_office_profile.py"), "--stage", $Stage)
 Copy-Item (Join-Path $Build "maracuja.exe") $Stage
 $gesture = Join-Path $Build "maracuja-gesture-helper.exe"
 if (Test-Path $gesture) { Copy-Item $gesture $Stage }
@@ -153,6 +157,8 @@ if (-not $SkipTests) {
     if (-not $env:QT_QPA_FONTDIR) { $env:QT_QPA_FONTDIR = Join-Path $env:SystemRoot "Fonts" }
     Run "ctest" @("--test-dir", $Build, "--output-on-failure", "--timeout", "180", "-j1")
     Run $BuildPython @("-I", (Join-Path $Project "tests/archive_privacy_check.py"))
+    Run $BuildPython @("-I", "-B", (Join-Path $Project "tests/windows_office_profile_check.py"))
+    Run $BuildPython @("-I", "-B", (Join-Path $Project "tests/windows_python_launchers_check.py"))
     Run $BuildPython @("-I", (Join-Path $Project "tests/release_privacy_check.py"))
     Run $BuildPython @("-I", "-B", (Join-Path $Project "tests/qt_notices_check.py"))
     Run $BuildPython @("-I", "-B", (Join-Path $Project "tests/graphics_notices_check.py"))
@@ -167,6 +173,7 @@ if (-not $SkipTests) {
         $env:QML_IMPORT_PATH = Join-Path $OwnershipStage "qml"
         $PrivatePython = Join-Path $OwnershipStage "runtime/python/python.exe"
         Run $PrivatePython @("-I", (Join-Path $OwnershipProject "tests/platform_runtime_check.py"))
+        Run $PrivatePython @("-I", "-B", (Join-Path $OwnershipProject "tests/document_worker_check.py"))
         Run $PrivatePython @("-I", "-B", (Join-Path $OwnershipProject "tests/ocr_threshold_check.py"))
         Run $PrivatePython @("-I", (Join-Path $OwnershipProject "tests/file_tools_check.py"), (Join-Path $OwnershipStage "file_tools.py"))
         foreach ($script in @("tests/integration_check.py", "tests/expanded_formats_check.py", "tests/ocr_check.py", "packaging/linux/smoke.py")) {
@@ -178,17 +185,30 @@ if (-not $SkipTests) {
     }
 }
 $env:PATH = $BuildPath
+# Optional wheel console tools embed the build interpreter's absolute path.
+# The app imports these libraries through its private Python and never uses
+# these entrypoints; omit only the explicitly reviewed seven launchers.
+Run $BuildPython @("-I", "-B", (Join-Path $PSScriptRoot "prune_python_launchers.py"), "--stage", $Stage)
 # Validation imports can create caches containing this machine's source paths.
 # Keep sourceless modules, sanitize traceback paths, then compute shipped hashes.
-Run $BuildPython @("-I", (Join-Path $Project "packaging/archive_privacy.py"), "--stage", $Stage)
+$OfficePython = Join-Path $Stage "runtime/libreoffice/program/python.exe"
+$PrivatePython = Join-Path $Stage "runtime/python/python.exe"
+if (-not (Test-Path -LiteralPath $OfficePython -PathType Leaf)) { throw "Packaged LibreOffice Python missing" }
+# LibreOffice carries its own Python minor version. Each interpreter inspects
+# only its matching bytecode; together these scopes cover the complete stage.
+Run $OfficePython @("-I", "-B", (Join-Path $Project "packaging/archive_privacy.py"), "--stage", $Stage, "--subtree", "runtime/libreoffice")
+Run $PrivatePython @("-I", "-B", (Join-Path $Project "packaging/archive_privacy.py"), "--stage", $Stage, "--exclude", "runtime/libreoffice")
+# The packaged template must still match after bytecode/privacy normalization.
+Run $PrivatePython @("-I", "-B", (Join-Path $PSScriptRoot "prepare_office_profile.py"), "--stage", $Stage, "--check")
 Run $BuildPython @("-I", "-B", (Join-Path $PSScriptRoot "collect_qt_notices.py"), "--stage", $Stage, "--cache", $Cache)
 Run $BuildPython @("-I", "-B", (Join-Path $PSScriptRoot "collect_graphics_notices.py"), "--stage", $Stage, "--cache", $Cache)
-Run $BuildPython @("-I", (Join-Path $PSScriptRoot "license_manifest.py"), "--stage", $Stage, "--version", $Version)
+Run $BuildPython @("-I", "-B", (Join-Path $PSScriptRoot "license_manifest.py"), "--stage", $Stage, "--version", $Version)
 $privacyArguments = @("-I", "-B", (Join-Path $Project "packaging/check_release_privacy.py"), "--stage", $Stage)
 if ($ForbiddenTextJson) { $privacyArguments += @("--forbidden-text-json", $ForbiddenTextJson) }
-# This release gate also runs with -SkipTests. The packaged interpreter matches
-# the bytecode version being inspected, including modules inside Python ZIPs.
-Run $PrivatePython $privacyArguments
+# These release gates also run with -SkipTests. Inspect every file, including
+# ZIP members, with the interpreter matching its runtime's bytecode version.
+Run $OfficePython ($privacyArguments + @("--subtree", "runtime/libreoffice"))
+Run $PrivatePython ($privacyArguments + @("--exclude", "runtime/libreoffice"))
 $RuntimeLock = Get-Content (Join-Path $Project "packaging/linux/runtime.lock.json") -Raw | ConvertFrom-Json
 $InnoFile = Join-Path $Cache "innosetup-7.1.0-x64.exe"
 if (-not (Test-Path $InnoFile) -or (Get-FileHash $InnoFile -Algorithm SHA256).Hash.ToLowerInvariant() -ne $RuntimeLock.innosetup.sha256) {
@@ -199,6 +219,11 @@ $InnoDirectory = Join-Path $Cache "inno-7.1.0"
 if (-not (Test-Path (Join-Path $InnoDirectory "ISCC.exe"))) {
     $install = Start-Process -FilePath $InnoFile -ArgumentList @("/CURRENTUSER", "/NOICONS", "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/DIR=`"$InnoDirectory`"") -WindowStyle Hidden -Wait -PassThru
     if ($install.ExitCode -ne 0) { throw "Private Inno Setup preparation failed" }
+}
+if (-not $SkipTests) {
+    # A tiny harness cancels before installation and exercises the production
+    # native probe against locked files and its own mapped executable image.
+    Run $BuildPython @("-I", "-B", (Join-Path $Project "tests/windows_installer_shutdown_check.py"), "--iscc", (Join-Path $InnoDirectory "ISCC.exe"))
 }
 Run (Join-Path $InnoDirectory "ISCC.exe") @("/DAppVersion=$Version", "/DStageDir=$Stage", "/DOutputDir=$Artifacts", (Join-Path $PSScriptRoot "Maracuja.iss"))
 $zip = Join-Path $Artifacts "Maracuja-$Version-windows-x64-portable.zip"

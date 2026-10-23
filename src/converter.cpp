@@ -1,5 +1,7 @@
 #include "converter.h"
 #include "outputdirectory.h"
+#include "documentconversion.h"
+#include "audioconversion.h"
 #include <QFileInfo>
 #include <QDir>
 #include <QUrl>
@@ -26,11 +28,45 @@ Converter::Converter(QObject *parent) : QObject(parent) {
         emit resultChanged();
         emit busyChanged();
     });
+#ifdef Q_OS_WIN
+    // Discover optional tools away from the GUI thread. Native image formats
+    // remain available immediately, even if Python or FFmpeg is unavailable.
+    m_formatPool.setMaxThreadCount(2);
+    connect(&m_documentFormatsWatcher, &QFutureWatcher<void>::finished, this, [this] {
+        m_documentFormatsLoading = false;
+        if (m_busy) emit formatsChanged();
+        else refreshFormats();
+    });
+    connect(&m_audioFormatsWatcher, &QFutureWatcher<QStringList>::finished, this, [this] {
+        m_audioFormats = m_audioFormatsWatcher.result();
+        m_audioFormatsLoading = false;
+        if (m_busy) emit formatsChanged();
+        else refreshFormats();
+    });
+    if (!Mandarina::Documents::capabilitiesReady()) {
+        m_documentFormatsLoading = true;
+        m_documentFormatsWatcher.setFuture(QtConcurrent::run(&m_formatPool, [] { Mandarina::Documents::prepareCapabilities(); }));
+    }
+    m_audioFormatsLoading = true;
+    m_audioFormatsWatcher.setFuture(QtConcurrent::run(&m_formatPool, [] { return Mandarina::Audio::outputFormats(); }));
+#endif
 }
 
 Converter::~Converter() {
     if (m_cancel) m_cancel->store(true);
     m_watcher.waitForFinished();
+#ifdef Q_OS_WIN
+    m_documentFormatsWatcher.waitForFinished();
+    m_audioFormatsWatcher.waitForFinished();
+#endif
+}
+
+bool Converter::formatsLoading() const {
+#ifdef Q_OS_WIN
+    return m_documentFormatsLoading || m_audioFormatsLoading;
+#else
+    return false;
+#endif
 }
 
 QString Converter::kindFor(const QStringList &paths) const {
@@ -67,7 +103,25 @@ QVariantList Converter::formatsForPaths(const QStringList &paths) const {
     const auto add = [&result](const QString &id, const QString &label, const QString &detail) {
         result << QVariantMap{{"id", id}, {"label", label}, {"detail", detail}};
     };
-    const auto available = Mandarina::outputFormats(kind);
+    QStringList available;
+#ifdef Q_OS_WIN
+    if (kind == "image") {
+        available = Mandarina::imageOutputFormats();
+        available.append("pdf");
+        available.append(Mandarina::Documents::cachedImageOcrFormats());
+    } else if (kind == "pdf") {
+        available = {"png", "jpg", "txt", "pdf"};
+        available.append(Mandarina::Documents::cachedPdfOutputFormats());
+        available.removeDuplicates();
+    } else if (kind == "document") {
+        available = Mandarina::Documents::cachedOutputFormats();
+        if (available.contains("pdf")) available << "png" << "jpg";
+    } else if (kind == "audio") {
+        available = m_audioFormats;
+    }
+#else
+    available = Mandarina::outputFormats(kind);
+#endif
     if (kind == "pdf") {
         for (const auto &id : QStringList{"docx", "png", "jpg", "txt", "md", "html", "epub", "pptx", "xlsx", "pdf"}) {
             if (!available.contains(id)) continue;
@@ -245,7 +299,11 @@ void Converter::convertTo(const QString &format) { setSelectedFormat(format); st
 
 void Converter::start() {
     if (m_busy || m_files.isEmpty()) return;
-    if (formats().isEmpty()) { setStatus(tr("Separe os tipos de arquivos e confira os conversores disponíveis.")); return; }
+    if (formats().isEmpty()) {
+        setStatus(formatsLoading() ? tr("Carregando os formatos disponíveis…")
+                                  : tr("Separe os tipos de arquivos e confira os conversores disponíveis."));
+        return;
+    }
     startRequest({m_files, m_format, m_outputDirectory, qBound(10, m_quality, 100), qBound(72, m_dpi, 300)});
 }
 

@@ -11,6 +11,19 @@
 #include <cstdio>
 
 namespace {
+bool waitForFormats(Converter &converter) {
+    if (!converter.formatsLoading()) return true;
+    QEventLoop loop;
+    QTimer deadline;
+    deadline.setSingleShot(true);
+    QObject::connect(&converter, &Converter::formatsChanged, &loop, [&] {
+        if (!converter.formatsLoading()) loop.quit();
+    });
+    QObject::connect(&deadline, &QTimer::timeout, &loop, &QEventLoop::quit);
+    deadline.start(10000);
+    if (converter.formatsLoading()) loop.exec();
+    return !converter.formatsLoading();
+}
 QStringList formatIds(const QVariantList &formats) {
     QStringList ids;
     for (const auto &format : formats) ids << format.toMap().value("id").toString();
@@ -58,6 +71,7 @@ bool gestureIsolationCheck(QTemporaryDir &temporary, const QString &image, const
     const QVariantList singlePdfUrls{QUrl::fromLocalFile(pdf)};
     const QVariantList multiplePdfUrls{QUrl::fromLocalFile(pdf), QUrl::fromLocalFile(secondPdf)};
     Converter imageWheel, documentWheel, pdfWheel;
+    if (!waitForFormats(imageWheel) || !waitForFormats(documentWheel) || !waitForFormats(pdfWheel)) return false;
     imageWheel.addUrls(imageUrls);
     documentWheel.addUrls(documentUrls);
     pdfWheel.addUrls(singlePdfUrls);
@@ -82,6 +96,7 @@ bool gestureIsolationCheck(QTemporaryDir &temporary, const QString &image, const
     for (int scenario = 0; scenario < 5; ++scenario) {
         int panelSignals = 0, allSignals = 0;
         Converter panel;
+        if (!waitForFormats(panel)) return false;
         if (scenario == 1 || scenario == 3) panel.addUrls({QUrl::fromLocalFile(image)});
         if (scenario == 2 || scenario == 4) panel.addUrls(documentUrls);
         if (scenario == 3 && !panel.previewUrls(singlePdfUrls)) return false;
@@ -174,6 +189,7 @@ int main(int argc, char **argv) {
     { QFile f(pdf); if (!f.open(QIODevice::WriteOnly)) return 2; f.write("%PDF-1.4\nfixture para classificar apenas\n"); }
     const auto url = QUrl::fromLocalFile(source);
     Converter converter;
+    if (!waitForFormats(converter)) return 1;
     if (!converter.outputDirectory().isEmpty() || !converter.outputFolderUrl().isEmpty()) return 1;
     converter.addUrls({url});
     const QUrl originalFolder = QUrl::fromLocalFile(QFileInfo(source).absolutePath());

@@ -292,6 +292,8 @@ def main():
             prepare_mingw(stage, cache, work)
     for name in ["document_convert.py", "file_tools.py", "ocr_engine.py", "platform_runtime.py"]:
         shutil.copy2(PROJECT / "helpers" / name, stage / name)
+    if arguments.platform == "windows":
+        shutil.copy2(PROJECT / "helpers/windows_office_profile.py", stage / "windows_office_profile.py")
     settings = {
         "python": "runtime/python/python.exe" if arguments.platform == "windows" else "runtime/python/bin/python3",
         "soffice": "runtime/libreoffice/program/soffice.com" if arguments.platform == "windows" else "runtime/libreoffice/program/soffice",

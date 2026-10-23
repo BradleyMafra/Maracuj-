@@ -251,6 +251,7 @@ struct WindowsGesture::Private : QAbstractNativeEventFilter {
     void showCandidate(POINT cursor, bool tools = false);
     void hideWheel();
     bool preview(const QVariantList &incoming);
+    void refreshPendingFormats();
     void updateHover(POINTL cursor);
     int sectorAt(QPointF position) const;
     void animate();
@@ -300,6 +301,8 @@ struct WindowsGesture::Private : QAbstractNativeEventFilter {
     QString error;
     QVariantList urls;
     QVariantList formats;
+    QVariantList pendingUrls;
+    POINTL pendingCursor {};
     int hovered = -1;
     int wheelTransparency = 35;
     int wheelSize = 100;
@@ -408,6 +411,9 @@ WindowsGesture::Private::Private(WindowsGesture *owner, Converter *controller)
     QObject::connect(&animation, &QTimer::timeout, q, [this] { animate(); });
     if (converter) QObject::connect(converter, &Converter::busyChanged, q, [this] {
         if (converter && converter->busy()) hideWheel();
+    });
+    if (converter) QObject::connect(converter, &Converter::formatsChanged, q, [this] {
+        refreshPendingFormats();
     });
 }
 
@@ -726,7 +732,7 @@ void WindowsGesture::Private::showCandidate(POINT cursor, bool tools)
     SetWindowPos(window, HWND_TOPMOST, x, y, extent, extent,
                  SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW);
     wheel->update();
-    candidateTimeout.start();
+    candidateTimeout.start(450);
 }
 
 void WindowsGesture::Private::hideWheel()
@@ -738,6 +744,7 @@ void WindowsGesture::Private::hideWheel()
     hovered = -1;
     urls.clear();
     formats.clear();
+    pendingUrls.clear();
     openingClock.invalidate();
     hoverClock.invalidate();
     if (wheel) wheel->hide();
@@ -772,6 +779,7 @@ bool WindowsGesture::Private::preview(const QVariantList &incoming)
     if (offered.isEmpty() || offered.size() > 16) return false;
     urls = incoming;
     formats = offered;
+    pendingUrls.clear();
     validDrag = true;
     candidateTimeout.stop();
     releaseTimeout.stop();
@@ -780,6 +788,17 @@ bool WindowsGesture::Private::preview(const QVariantList &incoming)
     if (wheel) wheel->update();
     animation.start();
     return true;
+}
+
+void WindowsGesture::Private::refreshPendingFormats()
+{
+    if (pendingUrls.isEmpty() || validDrag) return;
+    // Only a validated OLE drag can wait for background discovery. Keep a
+    // completed wheel's sectors fixed until it closes, even if OCR/audio
+    // discovery finishes while the pointer is over an existing sector.
+    const auto incoming = pendingUrls;
+    if (preview(incoming)) updateHover(pendingCursor);
+    else if (!converter || !converter->formatsLoading()) hideWheel();
 }
 
 int WindowsGesture::Private::sectorAt(QPointF position) const
@@ -832,10 +851,23 @@ HRESULT WindowsGesture::Private::enter(IDataObject *object, POINTL cursor, DWORD
     hovered = -1;
     urls.clear();
     formats.clear();
+    pendingUrls.clear();
     animation.stop();
     if (!enabled || !wheel || !wheel->isVisible()) return S_OK;
+    candidateTimeout.start(450);
     QVariantList incoming;
-    if (!(sourceEffects & DROPEFFECT_COPY) || !localFiles(object, incoming, toolsMode) || !preview(incoming)) return S_OK;
+    if (!(sourceEffects & DROPEFFECT_COPY) || !localFiles(object, incoming, toolsMode)) return S_OK;
+    if (!preview(incoming)) {
+        if (!toolsMode && converter && !converter->busy() && !externalBusy && converter->formatsLoading()) {
+            pendingUrls = incoming;
+            pendingCursor = cursor;
+            // The normal 450 ms probe timeout is too short for a cold tool
+            // discovery. OLE leave/drop, disabling and busy changes still
+            // cancel this pending target immediately; this is a final bound.
+            candidateTimeout.start(25000);
+        }
+        return S_OK;
+    }
     updateHover(cursor);
     *allowed = effect(sourceEffects);
     return S_OK;
@@ -844,6 +876,8 @@ HRESULT WindowsGesture::Private::enter(IDataObject *object, POINTL cursor, DWORD
 HRESULT WindowsGesture::Private::over(POINTL cursor, DWORD *allowed)
 {
     const DWORD sourceEffects = *allowed;
+    pendingCursor = cursor;
+    refreshPendingFormats();
     updateHover(cursor);
     *allowed = effect(sourceEffects);
     return S_OK;
@@ -853,6 +887,8 @@ HRESULT WindowsGesture::Private::drop(IDataObject *object, POINTL cursor, DWORD 
 {
     const DWORD sourceEffects = *allowed;
     *allowed = DROPEFFECT_NONE;
+    pendingCursor = cursor;
+    refreshPendingFormats();
     updateHover(cursor);
     if (effect(sourceEffects) != DROPEFFECT_COPY || hovered >= formats.size()) {
         hideWheel();

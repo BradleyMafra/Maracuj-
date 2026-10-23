@@ -17,7 +17,10 @@ env:
   CTEST_PARALLEL_LEVEL: "1"
 
 jobs:
+  source-privacy:
+    uses: ./.github/workflows/source-privacy.yml
   build:
+    needs: source-privacy
     strategy:
       fail-fast: false
       matrix:

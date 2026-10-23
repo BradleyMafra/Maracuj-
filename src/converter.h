@@ -3,6 +3,7 @@
 #include <QObject>
 #include <QVariantList>
 #include <QFutureWatcher>
+#include <QThreadPool>
 #include <QUrl>
 #include <memory>
 
@@ -10,6 +11,7 @@ class Converter final : public QObject {
     Q_OBJECT
     Q_PROPERTY(QVariantList files READ files NOTIFY filesChanged)
     Q_PROPERTY(QVariantList formats READ formats NOTIFY formatsChanged)
+    Q_PROPERTY(bool formatsLoading READ formatsLoading NOTIFY formatsChanged)
     Q_PROPERTY(QString inputKind READ inputKind NOTIFY formatsChanged)
     Q_PROPERTY(QString selectedFormat READ selectedFormat WRITE setSelectedFormat NOTIFY selectedFormatChanged)
     Q_PROPERTY(QString outputDirectory READ outputDirectory WRITE setOutputDirectory NOTIFY outputDirectoryChanged)
@@ -27,6 +29,7 @@ public:
     ~Converter() override;
     QVariantList files() const;
     QVariantList formats() const;
+    bool formatsLoading() const;
     QString inputKind() const;
     QString selectedFormat() const { return m_format; }
     void setSelectedFormat(const QString &format);
@@ -84,4 +87,11 @@ private:
     int m_quality = 90, m_dpi = 150, m_job = 0;
     std::shared_ptr<std::atomic_bool> m_cancel;
     QFutureWatcher<Mandarina::Result> m_watcher;
+#ifdef Q_OS_WIN
+    QThreadPool m_formatPool;
+    bool m_documentFormatsLoading = false, m_audioFormatsLoading = false;
+    QStringList m_audioFormats;
+    QFutureWatcher<void> m_documentFormatsWatcher;
+    QFutureWatcher<QStringList> m_audioFormatsWatcher;
+#endif
 };

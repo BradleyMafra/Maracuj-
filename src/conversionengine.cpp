@@ -370,6 +370,7 @@ Result convert(const Request &request, std::atomic_bool &cancel, const Progress 
         return result;
     }
 
+    Documents::Session documentSession;
     for (int index = 0; index < inputs.size(); ++index) {
         if (cancel.load()) { result.cancelled = true; break; }
         report(progress, index, inputs.size(), QStringLiteral("Convertendo arquivo %1 de %2").arg(index + 1).arg(inputs.size()));
@@ -381,7 +382,12 @@ Result convert(const Request &request, std::atomic_bool &cancel, const Progress 
             appendError(result, index, QStringLiteral("Tipo não compatível ou arquivo sem permissão de leitura."));
             continue;
         }
-        if (!outputFormats(kind).contains(format)) {
+        // Native image encoding and PDF rendering have no dependency on the
+        // Python/OCR/Office capability probe, including on a cold first job.
+        const bool nativeImage = kind == QStringLiteral("image") && !writerFormat(format).isEmpty();
+        const bool nativePdfRender = kind == QStringLiteral("pdf")
+                                     && (format == QStringLiteral("png") || format == QStringLiteral("jpg"));
+        if (!nativeImage && !nativePdfRender && !outputFormats(kind).contains(format)) {
             appendError(result, index, QStringLiteral("Esse formato de saída não está disponível para este tipo de arquivo nesta instalação."));
             continue;
         }
@@ -410,7 +416,7 @@ Result convert(const Request &request, std::atomic_bool &cancel, const Progress 
             const bool renderPages = format == QStringLiteral("png") || format == QStringLiteral("jpg");
             if (renderPages) renderInput = temporary.filePath(QStringLiteral("documento.pdf"));
             const auto outcome = Documents::convert(input, renderPages ? QStringLiteral("pdf") : format,
-                                                     renderPages ? renderInput : staged, cancel, documentProgress);
+                                                     renderPages ? renderInput : staged, cancel, documentProgress, &documentSession);
             if (outcome.status == Documents::Outcome::Cancelled) { result.cancelled = true; break; }
             if (outcome.status != Documents::Outcome::Success) { appendError(result, index, outcome.error); continue; }
         } else if (kind == QStringLiteral("image")
@@ -429,7 +435,7 @@ Result convert(const Request &request, std::atomic_bool &cancel, const Progress 
                     continue;
                 }
             } // Release decoded image memory before starting the OCR worker.
-            const auto outcome = Documents::convertImage(prepared, format, staged, cancel, documentProgress);
+            const auto outcome = Documents::convertImage(prepared, format, staged, cancel, documentProgress, &documentSession);
             if (outcome.status == Documents::Outcome::Cancelled) { result.cancelled = true; break; }
             if (outcome.status != Documents::Outcome::Success) { appendError(result, index, outcome.error); continue; }
         } else if (kind == QStringLiteral("image")) {

@@ -12,12 +12,23 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 import zipfile
 
 PROJECT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location("maracuja_release_privacy", PROJECT / "packaging/check_release_privacy.py")
 gate = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(gate)
+
+
+def interpreter_command():
+    executable = Path(sys.executable)
+    # LibreOffice's Windows launcher reports its python-core directory as
+    # sys.executable. Relaunch its adjacent wrapper, which initializes that
+    # same private interpreter, rather than attempting to execute a directory.
+    if executable.is_dir() and (executable.parent / "python.exe").is_file():
+        return str(executable.parent / "python.exe")
+    return str(executable)
 
 
 def pyc(filename):
@@ -126,12 +137,132 @@ class ReleasePrivacyChecks(unittest.TestCase):
                     gate.load_known_text(private)
             private = stage / "private.json"
             private.write_text(json.dumps(["private@example.invalid"]))
-            completed = subprocess.run([sys.executable, "-I", "-B", PROJECT / "packaging/check_release_privacy.py",
+            completed = subprocess.run([interpreter_command(), "-I", "-B", PROJECT / "packaging/check_release_privacy.py",
                                         "--stage", stage, "--forbidden-text-json", private], capture_output=True, text=True)
             self.assertEqual(completed.returncode, 1)
             self.assertFalse(json.loads(completed.stdout)["passed"])
             self.assertNotIn("private@example.invalid", completed.stdout + completed.stderr)
             self.assertNotIn(str(root), completed.stdout + completed.stderr)
+
+
+    def test_runtime_scopes_cover_all_files_without_relaxing_bytecode_validation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            stage = Path(temporary)
+            office = stage / "runtime/libreoffice"
+            office.mkdir(parents=True)
+            (office / "office.pyc").write_bytes(pyc("runtime/libreoffice/office.py"))
+            (stage / "app.pyc").write_bytes(pyc("app.py"))
+            (stage / "data.txt").write_text("public")
+            known = gate.KnownText([])
+            entire = gate.audit_stage(stage, known)
+            app = gate.audit_stage(stage, known, exclude=["runtime/libreoffice"])
+            office_report = gate.audit_stage(stage, known, subtree="runtime/libreoffice")
+            self.assertTrue(entire["passed"] and app["passed"] and office_report["passed"])
+            self.assertEqual(entire["counts"]["files"], app["counts"]["files"] + office_report["counts"]["files"])
+            self.assertEqual(entire["counts"]["bytecode_files"], 2)
+            self.assertEqual(app["counts"]["bytecode_files"], 1)
+            self.assertEqual(office_report["counts"]["bytecode_files"], 1)
+            (office / "office.pyc").write_bytes(b"BAD!" + pyc("office.py")[4:])
+            self.assertTrue(gate.audit_stage(stage, known, exclude=["runtime/libreoffice"])["passed"])
+            failed = gate.audit_stage(stage, known, subtree="runtime/libreoffice")
+            self.assertFalse(failed["passed"])
+            self.assertEqual(failed["issues"], [{"path": "runtime/libreoffice/office.pyc",
+                                               "category": "unreadable_or_incompatible_bytecode"}])
+
+    def test_both_scopes_detect_private_text_and_redact_private_paths(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            stage = Path(temporary)
+            office = stage / "runtime/libreoffice"
+            office.mkdir(parents=True)
+            private = "private@example.invalid"
+            (office / "private.txt").write_text(private)
+            (stage / (private + ".txt")).write_text("public")
+            known = gate.KnownText([private])
+            for arguments in ({"subtree": "runtime/libreoffice"}, {"exclude": ["runtime/libreoffice"]}):
+                report = gate.audit_stage(stage, known, **arguments)
+                self.assertFalse(report["passed"])
+                self.assertNotIn(private, json.dumps(report))
+            # Even an empty explicitly selected directory is release metadata.
+            (stage / private).mkdir()
+            for arguments in ({"subtree": private}, {"exclude": [private]}):
+                report = gate.audit_stage(stage, known, **arguments)
+                self.assertFalse(report["passed"])
+                self.assertNotIn(private, json.dumps(report))
+
+    def test_invalid_or_overlapping_scopes_fail_before_scanning(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            stage = Path(temporary)
+            (stage / "runtime/libreoffice").mkdir(parents=True)
+            (stage / "runtime/python").mkdir()
+            (stage / "file").write_text("public")
+            invalid = ("", ".", "..", "runtime/./python", "runtime//python", "runtime/../../outside",
+                       str(stage), "C:/outside", "\\\\server\\share", "file", "missing")
+            for value in invalid:
+                for argument in ("subtree", "exclude"):
+                    kwargs = {argument: [value] if argument == "exclude" else value}
+                    with self.subTest(value=value, argument=argument), patch.object(gate.os, "walk") as walk:
+                        with self.assertRaises((OSError, ValueError)):
+                            gate.audit_stage(stage, gate.KnownText([]), **kwargs)
+                        walk.assert_not_called()
+            for value in ("runtime/libreoffice", "runtime/python"):
+                with self.assertRaises(ValueError):
+                    gate.audit_stage(stage, gate.KnownText([]), subtree="runtime/libreoffice", exclude=[value])
+
+    def test_unreadable_tree_is_a_failed_report_without_exception_contents(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            stage = Path(temporary)
+            with patch.object(gate.os, "scandir", side_effect=PermissionError("private@example.invalid")):
+                report = gate.audit_stage(stage, gate.KnownText(["private@example.invalid"]))
+            self.assertFalse(report["passed"])
+            self.assertEqual(report["issues"], [{"path": "<directory>", "category": "unreadable_directory"}])
+            self.assertNotIn("private@example.invalid", json.dumps(report))
+
+    def test_cli_scopes_keep_reports_relative_and_leave_inputs_unchanged(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            stage = Path(temporary)
+            office = stage / "runtime/libreoffice"
+            office.mkdir(parents=True)
+            module = office / "office.pyc"
+            payload = pyc("runtime/libreoffice/office.py")
+            module.write_bytes(payload)
+            timestamp = module.stat().st_mtime_ns
+            for scope in (["--subtree", "runtime/libreoffice"], ["--exclude", "runtime/libreoffice"]):
+                completed = subprocess.run([interpreter_command(), "-I", "-B", PROJECT / "packaging/check_release_privacy.py",
+                                            "--stage", stage, *scope], capture_output=True, text=True)
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertTrue(json.loads(completed.stdout)["passed"])
+                self.assertNotIn(str(stage), completed.stdout)
+                self.assertEqual(module.read_bytes(), payload)
+                self.assertEqual(module.stat().st_mtime_ns, timestamp)
+
+    @unittest.skipUnless(os.name == "nt", "Windows junction fixture")
+    def test_windows_junction_is_rejected_and_not_traversed_including_explicit_scopes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stage, outside = root / "stage", root / "outside"
+            stage.mkdir()
+            outside.mkdir()
+            # Traversal would find a second issue; the only expected finding is
+            # the reparse point itself, without opening this private payload.
+            private = outside / "private.txt"
+            private.write_text("private@example.invalid")
+            link = stage / "linked"
+            environment = dict(os.environ, MARACUJA_TEST_LINK=str(link), MARACUJA_TEST_TARGET=str(outside))
+            completed = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
+                "$ErrorActionPreference = 'Stop'; New-Item -ItemType Junction -Path $env:MARACUJA_TEST_LINK "
+                "-Target $env:MARACUJA_TEST_TARGET | Out-Null"], env=environment, capture_output=True)
+            self.assertEqual(completed.returncode, 0, "Windows junction fixture creation failed")
+            try:
+                report = gate.audit_stage(stage, gate.KnownText(["private@example.invalid"]))
+                self.assertFalse(report["passed"])
+                self.assertEqual(report["counts"]["files"], 0)
+                self.assertEqual(report["issues"], [{"path": "linked", "category": "unsupported_reparse_point"}])
+                for arguments in ({"subtree": "linked"}, {"exclude": ["linked"]}):
+                    with self.assertRaisesRegex(ValueError, "link|reparse"):
+                        gate.audit_stage(stage, gate.KnownText([]), **arguments)
+                self.assertEqual(private.read_text(), "private@example.invalid")
+            finally:
+                link.rmdir()
 
 
 if __name__ == "__main__":

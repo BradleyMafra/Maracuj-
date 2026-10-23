@@ -6,6 +6,8 @@ build account's home path plus optional, privately supplied known identifiers.
 Public upstream examples such as C:\\Users\\example are not treated as personal
 data without an exact known identifier. No matching file contents are logged.
 Run with the same Python bytecode version as the packaged interpreter.
+For distributions with more than one interpreter, inspect each subtree with
+its interpreter and exclude that subtree from the other inspection.
 """
 
 import argparse
@@ -91,18 +93,57 @@ def bytecode_has_absolute_filename(payload):
     return False
 
 
-def audit_stage(stage, known_text):
-    root = Path(stage).resolve(strict=True)
+def _is_reparse(metadata):
+    return bool(getattr(metadata, "st_file_attributes", 0)
+                & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400))
+
+
+def _scope_directory(stage, relative):
+    """Require an existing child directory without links, escapes or aliases."""
+    value = os.fspath(relative)
+    normalized = value.replace("\\", "/")
+    parts = normalized.split("/")
+    if (not value or normalized.startswith("/") or ntpath.splitdrive(value)[0]
+            or any(part in {"", ".", ".."} for part in parts)):
+        raise ValueError("Privacy scope must be a relative directory inside staging")
+    candidate = stage
+    for part in parts:
+        candidate /= part
+        metadata = candidate.lstat()
+        if stat.S_ISLNK(metadata.st_mode) or _is_reparse(metadata):
+            raise ValueError("Privacy scope cannot traverse a link or reparse point")
+    resolved = candidate.resolve(strict=True)
+    if resolved == stage or not resolved.is_relative_to(stage) or not resolved.is_dir():
+        raise ValueError("Privacy scope must be a child directory inside staging")
+    return resolved
+
+
+def audit_stage(stage, known_text, *, subtree=None, exclude=()):
+    root = Path(stage).absolute()
+    metadata = root.lstat()
+    if stat.S_ISLNK(metadata.st_mode) or _is_reparse(metadata):
+        raise ValueError("Release stage cannot be a link or reparse point")
+    root = root.resolve(strict=True)
     if not root.is_dir():
         raise ValueError("Release stage must be a directory")
+    scope = _scope_directory(root, subtree) if subtree is not None else root
+    excluded = {_scope_directory(root, value) for value in exclude}
+    if any(path == scope or not path.is_relative_to(scope) for path in excluded):
+        raise ValueError("Excluded privacy directories must be children of the selected scope")
     issues = []
     counts = Counter(files=0, symlinks=0, zip_entries=0, bytecode_files=0)
+
+    def label(name):
+        return "<redacted path>" if known_text.contains(name.encode("utf-8")) else name
 
     def issue(name, category):
         # Relative file names locate failures without printing their contents.
         # A private identifier can also occur in a file name: redact that name.
-        label = "<redacted path>" if known_text.contains(name.encode("utf-8")) else name
-        issues.append({"path": label, "category": category})
+        issues.append({"path": label(name), "category": category})
+
+    scope_name = scope.relative_to(root).as_posix()
+    if scope != root and known_text.contains(scope_name.encode("utf-8")):
+        issue(scope_name, "known_private_text_in_path")
 
     def check_code(source, name, size):
         counts["bytecode_files"] += 1
@@ -159,8 +200,9 @@ def audit_stage(stage, known_text):
     def walk_error(_error):
         issue("<directory>", "unreadable_directory")
 
-    for directory, directories, files in os.walk(root, followlinks=False, onerror=walk_error):
-        for filename in directories + files:
+    for directory, directories, files in os.walk(scope, followlinks=False, onerror=walk_error):
+        descend = []
+        for filename in sorted(directories + files):
             path = Path(directory) / filename
             name = path.relative_to(root).as_posix()
             try:
@@ -179,7 +221,14 @@ def audit_stage(stage, known_text):
                     except (OSError, RuntimeError):
                         issue(name, "broken_or_looping_symlink")
                     continue
+                if _is_reparse(metadata):
+                    # Junctions are not S_ISLNK on Windows. Never descend into
+                    # them, even if their current target is inside staging.
+                    issue(name, "unsupported_reparse_point")
+                    continue
                 if stat.S_ISDIR(metadata.st_mode):
+                    if path not in excluded:
+                        descend.append(filename)
                     continue
                 if not stat.S_ISREG(metadata.st_mode):
                     issue(name, "unsupported_file_type")
@@ -198,19 +247,27 @@ def audit_stage(stage, known_text):
                         check_zip(archive, name)
             except (OSError, RuntimeError, zipfile.BadZipFile, NotImplementedError):
                 issue(name, "unreadable_release_file")
-    return {"passed": not issues, "counts": dict(counts), "issues": issues}
+        directories[:] = descend
+    return {"passed": not issues, "counts": dict(counts), "issues": issues,
+            "scope": label(scope_name),
+            "excluded": sorted(label(path.relative_to(root).as_posix()) for path in excluded),
+            "python_magic": importlib.util.MAGIC_NUMBER.hex()}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--stage", type=Path, required=True)
+    parser.add_argument("--subtree", help="Only inspect this relative child directory of staging")
+    parser.add_argument("--exclude", action="append", default=[],
+                        help="Do not traverse this relative child directory (repeatable)")
     parser.add_argument("--forbidden-text-json", type=Path,
                         help="Private JSON array (or forbidden_text array), stored outside the stage")
     arguments = parser.parse_args()
     try:
         if arguments.forbidden_text_json and arguments.forbidden_text_json.resolve().is_relative_to(arguments.stage.resolve()):
             raise ValueError("The private identifier list must be outside the release stage")
-        report = audit_stage(arguments.stage, load_known_text(arguments.forbidden_text_json))
+        report = audit_stage(arguments.stage, load_known_text(arguments.forbidden_text_json),
+                             subtree=arguments.subtree, exclude=arguments.exclude)
     except (OSError, ValueError, RuntimeError, json.JSONDecodeError):
         # Exception messages can include local paths or private JSON values.
         print(json.dumps({"passed": False, "error": "privacy_gate_configuration_or_stage_error"}))

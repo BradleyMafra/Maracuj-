@@ -31,7 +31,12 @@ namespace {
 bool writeMarker(const QString &path, const QByteArray &data)
 {
     QSaveFile marker(path);
-    return marker.open(QIODevice::WriteOnly) && marker.write(data) == data.size() && marker.commit();
+    const bool written = marker.open(QIODevice::WriteOnly)
+        && marker.write(data) == data.size() && marker.commit();
+    if (!written)
+        std::fprintf(stderr, "Fixture marker %s failed: %s\n", qPrintable(QFileInfo(path).fileName()),
+                     qPrintable(marker.errorString()));
+    return written;
 }
 
 QByteArray readMarker(const QString &path)
@@ -158,12 +163,22 @@ struct UnrelatedFixture {
     }
     bool keptRunning()
     {
-        const QByteArray before = readMarker(directory.filePath("unrelated.heartbeat"));
-        return !before.isEmpty() && process.state() == QProcess::Running
-            && waitUntil([&] {
-                return process.state() == QProcess::Running
-                    && readMarker(directory.filePath("unrelated.heartbeat")) != before;
-            }, 1000);
+        QByteArray before;
+        // Atomic heartbeat replacement can make a single Windows observer read
+        // temporarily unavailable. Require two valid, different samples within
+        // the deadline; an empty read is neither process death nor advancement.
+        const bool kept = waitUntil([&] {
+            if (process.state() != QProcess::Running) return false;
+            const auto current = readMarker(directory.filePath("unrelated.heartbeat"));
+            if (current.isEmpty()) return false;
+            if (before.isEmpty()) { before = current; return false; }
+            return current != before;
+        }, 1000);
+        if (!kept)
+            std::fprintf(stderr, "Unrelated fixture failed: state=%d exit=%d heartbeat=%s stderr=%s\n",
+                         int(process.state()), process.exitCode(), before.constData(),
+                         process.readAllStandardError().constData());
+        return kept;
     }
 };
 
@@ -177,20 +192,29 @@ bool checkTree(const QString &path, const QString &mode, UnrelatedFixture &unrel
         Mandarina::OwnedProcess process;
         process.setProgram(QCoreApplication::applicationFilePath());
         process.setArguments({"--child", path, mode == "orphan" ? "exit" : "stay"});
-        if (!process.startOwned(QIODevice::ReadOnly, 5000)) return false;
+        if (!process.startOwned(QIODevice::ReadOnly, 5000)) {
+            std::fprintf(stderr, "Owned fixture start failed: %s\n", qPrintable(process.errorString()));
+            return false;
+        }
         if (!waitUntil([&] { return QFileInfo::exists(directory.filePath("child.ready")); })) {
+            std::fprintf(stderr, "Owned fixture never ready: state=%d exit=%d stderr=%s\n",
+                         int(process.state()), process.exitCode(), process.readAllStandardError().constData());
             writeMarker(directory.filePath("stop"), "stop");
             return false;
         }
         bool valid = false;
         grandchildPid = readMarker(directory.filePath("grandchild.started")).toLongLong(&valid);
         if (!valid || !stillRunning(grandchildPid) || !unrelated.keptRunning()) {
+            std::fprintf(stderr, "Owned fixture readiness failed: valid=%d grandchildRunning=%d\n",
+                         int(valid), int(stillRunning(grandchildPid)));
             writeMarker(directory.filePath("stop"), "stop");
             return false;
         }
         if (mode == "orphan") {
             parentFinished = waitUntil([&] { return process.state() == QProcess::NotRunning; });
             if (!parentFinished || !stillRunning(grandchildPid)) {
+                std::fprintf(stderr, "Owned orphan fixture failed: parentFinished=%d grandchildRunning=%d\n",
+                             int(parentFinished), int(stillRunning(grandchildPid)));
                 writeMarker(directory.filePath("stop"), "stop");
                 return false;
             }
@@ -209,7 +233,11 @@ bool checkTree(const QString &path, const QString &mode, UnrelatedFixture &unrel
         writeMarker(directory.filePath("stop"), "stop");
         waitUntil([&] { return !stillRunning(grandchildPid); }, 3000);
     }
-    return stopped && (mode == "destructor" || parentFinished) && unrelated.keptRunning();
+    const bool kept = unrelated.keptRunning();
+    if (!stopped || (mode != "destructor" && !parentFinished) || !kept)
+        std::fprintf(stderr, "Owned fixture final state: stopped=%d parentFinished=%d unrelatedKept=%d\n",
+                     int(stopped), int(parentFinished), int(kept));
+    return stopped && (mode == "destructor" || parentFinished) && kept;
 }
 
 } // namespace
