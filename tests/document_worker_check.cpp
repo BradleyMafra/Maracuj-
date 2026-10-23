@@ -10,6 +10,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QProcess>
+#include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QThread>
 #include <cstdio>
@@ -63,6 +64,13 @@ int worker(const QStringList &arguments)
         const int id = request.value("id").toInt();
         const auto destination = request.value("output").toString();
         const auto mode = QFileInfo(request.value("input").toString()).completeBaseName();
+        if (mode.startsWith("engine-")) {
+            const QString workspace = QFileInfo(destination).absolutePath();
+            const QDir privateTree(QDir(workspace).filePath(".maracuja-documento-fixture"));
+            if (!QDir().mkpath(privateTree.path())
+                || !writeFile(privateTree.filePath("source.txt"), "synthetic private source copy")
+                || !writeFile(root.filePath("engine-workspace.txt"), workspace.toUtf8())) return 2;
+        }
         ++count;
         QJsonObject result{{"id", id}, {"type", "result"}, {"ok", true}};
         if (mode == "bad-id") result.insert("id", id + 1);
@@ -72,7 +80,7 @@ int worker(const QStringList &arguments)
             std::fflush(stdout);
             return 0;
         }
-        if (mode == "slow") {
+        if (mode == "slow" || mode == "engine-cancel") {
             QProcess descendant;
             descendant.setCreateProcessArgumentsModifier([](QProcess::CreateProcessArguments *args) {
                 args->flags |= CREATE_NO_WINDOW;
@@ -87,7 +95,8 @@ int worker(const QStringList &arguments)
         const auto content = QByteArray::number(QCoreApplication::applicationPid()) + ":" + QByteArray::number(count);
         if (!writeFile(destination, content)) result = {{"id", id}, {"type", "result"}, {"ok", false}, {"error", "fixture failure"}};
         if (mode == "crash") return 3;
-        if (mode == "error") result = {{"id", id}, {"type", "result"}, {"ok", false}, {"error", "fixture failure"}};
+        if (mode == "error" || mode == "engine-error")
+            result = {{"id", id}, {"type", "result"}, {"ok", false}, {"error", "fixture failure"}};
         emitEvent(result);
     }
 }
@@ -183,6 +192,42 @@ int main(int argc, char **argv)
         finalPid = readFile(root.filePath("last.txt")).split(':').first().toLongLong();
     }
     if (!check(stopped(finalPid), "RAII teardown left a successful worker running")) return 1;
-    std::puts("Native dependency bypass, reuse, recycling, failures, cancellation, timeout and teardown passed.");
+    // A deep destination and custom TEMP must not determine the Windows Office
+    // profile's path. The C++ supervisor must own/remove its whole tree, even
+    // when cancellation kills Python before its finally blocks can run.
+    const QString deepOutput = root.filePath(QStringLiteral("destino-á-") + QString(80, 'x')
+                                              + "/" + QString(60, 'y'));
+    if (!QDir().mkpath(deepOutput)) return 2;
+    const QDir knownTemp(QDir(QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)).filePath("Temp"));
+    for (const QString mode : {"engine-success", "engine-error", "engine-cancel"}) {
+        const QString input = root.filePath(mode + ".txt");
+        const QByteArray original("synthetic original remains unchanged");
+        if (!writeFile(input, original)) return 2;
+        QFile::remove(root.filePath("engine-workspace.txt"));
+        QFile::remove(root.filePath("child.pid"));
+        cancel.store(false);
+        const auto result = convert({{input}, "pdf", deepOutput, 90, 150}, cancel,
+            [&](int, int, const QString &phase) {
+                if (mode == "engine-cancel" && phase.startsWith(QStringLiteral("Extraindo texto")))
+                    cancel.store(true);
+            });
+        const QString workspace = QString::fromUtf8(readFile(root.filePath("engine-workspace.txt")));
+        if (!check(!workspace.isEmpty() && QFileInfo(workspace).dir().absolutePath() == knownTemp.absolutePath()
+                   && !QFileInfo::exists(workspace) && readFile(input) == original,
+                   "Document staging was not short, supervised, cleaned or original-preserving")) return 1;
+        if (mode == "engine-success") {
+            if (!check(result.errors.isEmpty() && result.outputs.size() == 1
+                       && QFileInfo(result.outputs.first()).dir().absolutePath() == QDir(deepOutput).absolutePath(),
+                       "Short document staging was not published in the deep destination")) return 1;
+        } else if (mode == "engine-error") {
+            if (!check(!result.errors.isEmpty() && result.outputs.isEmpty(),
+                       "Failed document worker published a private copy")) return 1;
+        } else {
+            const qint64 child = readFile(root.filePath("child.pid")).toLongLong();
+            if (!check(result.cancelled && result.outputs.isEmpty() && child > 1 && stopped(child),
+                       "Hard document cancellation left an output, private source or descendant")) return 1;
+        }
+    }
+    std::puts("Native bypass, reuse, recycling, failures, cancellation, timeout, teardown and supervised short document staging passed.");
     return 0;
 }

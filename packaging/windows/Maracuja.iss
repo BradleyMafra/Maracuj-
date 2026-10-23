@@ -7,6 +7,9 @@
 #ifndef OutputDir
   #error OutputDir is required
 #endif
+#ifndef PackageCompression
+  #define PackageCompression "lzma2"
+#endif
 
 [Setup]
 AppId={{5828FD70-EC52-4DC1-9C4D-3F4FA2263D80}
@@ -23,10 +26,11 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0.18362
 PrivilegesRequired=lowest
-Compression=lzma2
+Compression={#PackageCompression}
 SolidCompression=yes
 WizardStyle=modern
 DisableProgramGroupPage=yes
+UsePreviousTasks=yes
 CloseApplications=no
 RestartApplications=no
 #if FileExists(StageDir + "\assets\maracuja.ico")
@@ -46,7 +50,7 @@ english.AppStillRunning=Maracujá is still using the installation files. Wait fo
 
 [Tasks]
 Name: "background"; Description: "Iniciar o Maracujá em segundo plano ao entrar no Windows"; Flags: unchecked
-Name: "contextmenu"; Description: "Adicionar Converter com Maracujá ao menu dos arquivos"; Flags: checkedonce
+Name: "contextmenu"; Description: "Adicionar Converter com Maracujá ao menu dos arquivos"
 Name: "desktopicon"; Description: "Criar atalho na área de trabalho"; Flags: unchecked
 
 [Files]
@@ -54,6 +58,15 @@ Source: "{#StageDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs c
 
 [InstallDelete]
 Type: files; Name: "{app}\mandarina.exe"
+; Earlier packages shipped optional Python command launchers with build paths.
+; The application imports their libraries directly and never invokes these files.
+Type: files; Name: "{app}\runtime\python\Scripts\cffi-gen-src.exe"
+Type: files; Name: "{app}\runtime\python\Scripts\normalizer.exe"
+Type: files; Name: "{app}\runtime\python\Scripts\pdfplumber.exe"
+Type: files; Name: "{app}\runtime\python\Scripts\pypdfium2.exe"
+Type: files; Name: "{app}\runtime\python\Scripts\dumppdf.py"
+Type: files; Name: "{app}\runtime\python\Scripts\pdf2txt.py"
+Type: files; Name: "{app}\runtime\python\Scripts\vba_extract.py"
 
 [Icons]
 Name: "{autoprograms}\Maracujá"; Filename: "{app}\maracuja.exe"

@@ -17,6 +17,7 @@
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <QRegularExpression>
+#include <QStandardPaths>
 #include <QStringConverter>
 #include <QTemporaryDir>
 #include <QTextStream>
@@ -391,9 +392,23 @@ Result convert(const Request &request, std::atomic_bool &cancel, const Progress 
             appendError(result, index, QStringLiteral("Esse formato de saída não está disponível para este tipo de arquivo nesta instalação."));
             continue;
         }
-        QTemporaryDir temporary(fileDirectory.absoluteFilePath(QStringLiteral(".mandarina-XXXXXX")));
+        QString temporaryParent = fileDirectory.absolutePath();
+#ifdef Q_OS_WIN
+        if (kind == QStringLiteral("document")) {
+            // Writer's extension registry still has MAX_PATH limits. Keep its
+            // complete private tree short and owned by this C++ scope so even
+            // a hard worker cancellation removes the copied source/profile.
+            const QString localData = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
+            temporaryParent = localData.isEmpty() ? QString{} : QDir(localData).filePath(QStringLiteral("Temp"));
+            if (temporaryParent.isEmpty() || !QDir().mkpath(temporaryParent)) {
+                appendError(result, index, QStringLiteral("Não foi possível criar a pasta temporária privada do documento."));
+                continue;
+            }
+        }
+#endif
+        QTemporaryDir temporary(QDir(temporaryParent).absoluteFilePath(QStringLiteral(".mandarina-XXXXXX")));
         if (!temporary.isValid()) {
-            appendError(result, index, QStringLiteral("Não foi possível criar um arquivo temporário na pasta de destino."));
+            appendError(result, index, QStringLiteral("Não foi possível criar um arquivo temporário para a conversão."));
             continue;
         }
         const QString staged = temporary.filePath(QStringLiteral("saida.") + format);
